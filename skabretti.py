@@ -86,8 +86,6 @@ class InclinedPlane(Polygon):
         "angle_label": "\\theta",
         "angle_label_scale": 1,
         "angle_label_buffer": MED_SMALL_BUFF,
-        "kinetic_coefficient_of_friction": 0.5,
-        "static_coefficient_of_friction": 0.5,
         "max_height": 6,
         "max_width": 10,
         "color": WHITE,
@@ -143,13 +141,29 @@ class BlockSlidingDownInclinedPlane(Scene):
         "g": 9.82,
         "v0": 0,
 
-        "show_legend": True,
         "combine_mu": True,
-        "show_ind_force_vectors": False,
-        "show_total_force_vector": False,
-        "total_force_color": COLOR_MAP["RED_C"],
-        "show_force_names": False,
-        "time_before_slide": 2,
+        "show_legend": True,
+        "show_individual_force_vectors": True,
+        "show_total_force_vector": True,
+        "clip_forces_behind_block": False,
+        "force_scale": 0.2,
+        "hide_forces_in_slide": False,
+        "show_force_names_by_vectors": True,
+        "show_force_names_in_legend": False,
+        "break_force_into_components": True,
+        "force_colors": {
+            "gravity": BLUE,
+            "normal": YELLOW,
+            "friction": RED,
+            "total": GREEN,
+        },
+        "force_names": {
+            "gravity": "\\vv{F_g}",
+            "normal": "\\vv{Þ}",
+            "friction": "\\vv{F_{\\text{nún}}}",
+            "total": "\\vv{F_{\\text{heild}}}",
+        },
+        "time_before_slide": 1,
     }
 
     def construct(self):
@@ -166,7 +180,7 @@ class BlockSlidingDownInclinedPlane(Scene):
                             1], end_point=incl_plane.get_vertices()[2])
         
         a = self.g * (math.sin(ang) - self.mu_k * math.cos(ang))
-        total_time = (-self.v0 + math.sqrt(self.v0**2 +2*a*block.path_length)) / a
+        total_time = (-self.v0 + math.sqrt(self.v0**2 + 2*a*block.path_length)) / a
         if self.mu_s >= math.tan(ang):
             a = 0
             total_time = 0
@@ -175,21 +189,58 @@ class BlockSlidingDownInclinedPlane(Scene):
             self.add_legend(self.combine_mu)
 
         self.add(incl_plane, block)
-        self.wait(self.time_before_slide)
-        block.start_move(a, self.v0)
+        if self.show_individual_force_vectors or self.show_total_force_vector:
+            self.show_force_vectors(block)
+        else:
+            self.wait(self.time_before_slide)
 
+        block.start_move(a, self.v0)
         self.wait(total_time + 1)
 
-        # if self.mu_s < math.tan(ang):
-        #     # block.start_move(self.g * (math.sin(ang) - self.mu_k * math.cos(ang)))
-        #     block.start_move(self.g * (math.sin(ang) - self.mu_k * math.cos(ang)), self.v0)
-        #     self.wait()
+    def show_force_vectors(self, block):
+        def get_polar_vector(length, angle):
+            return Vector(length*np.array([math.cos(angle), math.sin(angle), 0]))
 
-        # dist_tracker = ValueTracker(0)
-        # block.add_updater(lambda b: b.move(dist_tracker.get_value()))
-        # self.play(dist_tracker.set_value,
-        #           block.get_true_path().get_length(), run_time=3)
-        # self.wait(1)
+        grav = get_polar_vector(self.force_scale*self.m*self.g, -PI/2).set_color(self.force_colors['gravity'])
+        norm = get_polar_vector(self.force_scale*self.m*self.g*math.cos(self.theta*DEGREES), PI/2-self.theta*DEGREES).set_color(self.force_colors['normal'])
+        if self.mu_s >= math.tan(self.theta*DEGREES):
+            fric = Vector(-(grav.get_end() + norm.get_end()))
+        else:
+            fric = get_polar_vector(self.force_scale*self.mu_k*self.m*self.g*math.cos(self.theta*DEGREES), PI-self.theta*DEGREES)
+        fric.set_color(self.force_colors['friction'])
+        
+        forces = VGroup(grav, norm, fric)
+        edges = VGroup()
+
+        if self.show_total_force_vector:
+            print("blinggg")
+            total = get_polar_vector(self.force_scale*self.m*self.g*((math.sin(self.theta*DEGREES)-self.mu_k*math.cos(self.theta*DEGREES))), -self.theta*DEGREES)
+            total.set_color(self.force_colors['total'])
+            forces.add(total)
+
+        if self.break_force_into_components:
+            vert_comp = DashedLine(start=ORIGIN, end=-norm.get_end()).set_color(self.force_colors['gravity'])
+            horz_comp = DashedLine(start=vert_comp.get_end(), end=grav.get_end()).set_color(self.force_colors['gravity'])
+            forces.add(vert_comp, horz_comp)
+
+            def update_horz(horz):
+                horz.put_start_and_end_on(vert_comp.get_end(), grav.get_end())
+            horz_comp.add_updater(update_horz)
+
+        def move_to_block(vectors):
+            for v in vectors:
+                v.move_to(block.get_center()).shift(v.get_length()/2*v.get_unit_vector())
+
+        forces.add_updater(move_to_block)
+
+        if self.clip_forces_behind_block:
+            self.add_foreground_mobject(block)
+        self.play(ShowCreation(forces))
+        self.wait(self.time_before_slide)
+        if self.hide_forces_in_slide:
+            self.remove(forces)
+
+        
 
     def add_legend(self, combine_mu, position=UR, scale=0.7,
                    show_m=True, show_theta=True, show_mu_k=True, show_mu_s=True, show_g=False):
