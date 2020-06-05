@@ -140,6 +140,7 @@ class BlockSlidingDownInclinedPlane(Scene):
         "mu_s": 0.2,
         "g": 9.82,
         "v0": 0,
+        "s0": 0,
 
         "combine_mu": True,
         "show_legend": True,
@@ -147,7 +148,7 @@ class BlockSlidingDownInclinedPlane(Scene):
         "show_total_force_vector": True,
         "set_forces_to_block_edge": True,
         "force_scale": 0.2,
-        "hide_forces_in_slide": False,
+        "hide_forces_in_slide": True,
         "show_force_names_by_vectors": True,
         "show_force_names_in_legend": False,
         "break_force_into_components": True,
@@ -159,7 +160,7 @@ class BlockSlidingDownInclinedPlane(Scene):
         },
         "force_names": {
             "gravity": "F_g",
-            "normal": "Þ",
+            "normal": "F_N",
             "friction": "F_{\\text{nún}}",
             "total": "F_{\\text{heild}}",
         },
@@ -177,7 +178,7 @@ class BlockSlidingDownInclinedPlane(Scene):
         ang = incl_plane.angle*DEGREES
 
         block = MovingBlock(mass=self.m, start_point=incl_plane.get_vertices()[
-                            1], end_point=incl_plane.get_vertices()[2])
+                            1], end_point=incl_plane.get_vertices()[2], displacement=self.s0)
 
         if self.mu_s >= math.tan(ang):
             a = 0
@@ -188,7 +189,7 @@ class BlockSlidingDownInclinedPlane(Scene):
                                                2 + 2*a*block.path_length)) / a
 
         if self.show_legend:
-            self.add_legend(self.combine_mu)
+            self.add_legend(combine_mu=self.combine_mu)
 
         self.add(incl_plane, block)
         if self.show_individual_force_vectors or self.show_total_force_vector:
@@ -222,11 +223,15 @@ class BlockSlidingDownInclinedPlane(Scene):
         fric.set_color(self.force_colors['friction'])
         total.set_color(self.force_colors['total'])
 
-        forces = VGroup(grav, norm, fric)
+        forces = VGroup()
+        if self.show_individual_force_vectors:
+            forces.add(grav, norm, fric)
         if self.show_total_force_vector:
             forces.add(total)
 
-        if self.break_force_into_components:
+        vert_comp = None
+        horz_comp = None
+        if self.break_force_into_components and self.show_individual_force_vectors:
             vert_comp = DashedLine(start=ORIGIN, end=-norm.get_end(),
                                    stroke_width=2).set_color(self.force_colors['gravity'])
             horz_comp = DashedLine(start=vert_comp.get_end(), end=grav.get_end(
@@ -243,6 +248,22 @@ class BlockSlidingDownInclinedPlane(Scene):
         left_offset = -block.get_width()/2.33 * \
             np.array([math.cos(-ang), math.sin(-ang), 0])
         right_offset = -left_offset
+
+        grav_name = TexMobject("\\vec{", self.force_names['gravity']).set_color(self.force_colors['gravity'], "}").scale(min(1, grav.get_length()))
+        norm_name = TexMobject("\\vec{", self.force_names['normal']).set_color(self.force_colors['normal'], "}").scale(min(1, norm.get_length()))
+        fric_name = TexMobject("\\vec{", self.force_names['friction']).set_color(self.force_colors['friction'], "}").scale(min(1, fric.get_length()))
+        total_name = TexMobject("\\vec{", self.force_names['total']).set_color(self.force_colors['total'], "}").scale(min(1, total.get_length()))
+        names = VGroup()
+        if self.show_individual_force_vectors:
+            names.add(grav_name, norm_name, fric_name)
+        if self.show_total_force_vector:
+            names.add(total_name)
+        force_names = {
+            grav: grav_name,
+            norm: norm_name,
+            fric: fric_name,
+            total: total_name,
+        }
 
         def move_to_block(vectors):
             force_positions = {
@@ -263,17 +284,29 @@ class BlockSlidingDownInclinedPlane(Scene):
             for v in vectors:
                 v.move_to(force_positions[v]).shift(
                     v.get_length()/2*v.get_unit_vector())
+                if self.show_force_names_by_vectors and v not in (vert_comp, horz_comp):
+                    side = RIGHT
+                    if v in (fric):
+                        side = UP
+                    force_names[v].next_to(v.get_end(), side)
 
         move_to_block(forces)
         if self.set_forces_to_block_edge:
             self.add_foreground_mobject(block)
+
         self.play(ShowCreation(forces))
+        if self.show_force_names_by_vectors:
+            self.play(Write(names))
         forces.add_updater(move_to_block)
         self.wait(self.time_before_slide)
+
         if self.hide_forces_in_slide:
+            forces.remove_updater(move_to_block)
+            if self.show_force_names_by_vectors:
+                self.play(Uncreate(names))
             self.play(Uncreate(forces))
 
-    def add_legend(self, scale=0.6,
+    def add_legend(self, scale=0.8,
                    show_m=True, show_theta=True, show_mu_k=True, show_mu_s=True, combine_mu=True, show_g=True):
 
         m_leg = TexMobject("m", "=", "\SI{%s}{kg}" % (self.m))
