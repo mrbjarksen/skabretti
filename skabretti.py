@@ -51,7 +51,8 @@ class MovingBlock(Block):
         self.path_length = path.get_length()
 
         if self.align_block_edge_to_path:
-            path.shift(np.array([self.height/2 * math.sin(-ang), self.height/2 * math.cos(-ang), 0]))
+            path.shift(
+                np.array([self.height/2 * math.sin(-ang), self.height/2 * math.cos(-ang), 0]))
             path.set_length(self.path_length-self.width)
             self.path_length = path.get_length()
 
@@ -62,7 +63,8 @@ class MovingBlock(Block):
         def update_block(self, dt):
             self.velocity += self.acceleration * dt
             self.displacement += self.velocity * dt
-            self.move_to(straight_path(self.true_path.get_start(), self.true_path.get_end(), self.displacement / self.path_length))
+            self.move_to(straight_path(self.true_path.get_start(
+            ), self.true_path.get_end(), self.displacement / self.path_length))
             if self.displacement >= self.path_length:
                 self.velocity = 0
                 self.acceleration = 0
@@ -73,8 +75,6 @@ class MovingBlock(Block):
     def start_move(self, a, v=0):
         self.acceleration = a
         self.velocity = v
-    
-
 
 
 class InclinedPlane(Polygon):
@@ -136,7 +136,7 @@ class BlockSlidingDownInclinedPlane(Scene):
         # Values (in SI-units)
         "m": 1,
         "theta": 30,  # degrees
-        "mu_k": 0.2,
+        "mu_k": 0.3,
         "mu_s": 0.2,
         "g": 9.82,
         "v0": 0,
@@ -145,7 +145,7 @@ class BlockSlidingDownInclinedPlane(Scene):
         "show_legend": True,
         "show_individual_force_vectors": True,
         "show_total_force_vector": True,
-        "clip_forces_behind_block": False,
+        "set_forces_to_block_edge": True,
         "force_scale": 0.2,
         "hide_forces_in_slide": False,
         "show_force_names_by_vectors": True,
@@ -158,10 +158,10 @@ class BlockSlidingDownInclinedPlane(Scene):
             "total": GREEN,
         },
         "force_names": {
-            "gravity": "\\vv{F_g}",
-            "normal": "\\vv{Þ}",
-            "friction": "\\vv{F_{\\text{nún}}}",
-            "total": "\\vv{F_{\\text{heild}}}",
+            "gravity": "F_g",
+            "normal": "Þ",
+            "friction": "F_{\\text{nún}}",
+            "total": "F_{\\text{heild}}",
         },
         "time_before_slide": 1,
     }
@@ -169,7 +169,7 @@ class BlockSlidingDownInclinedPlane(Scene):
     def construct(self):
         if self.combine_mu:
             self.mu_s = self.mu_k
-        
+
         incl_plane = InclinedPlane(
             angle=self.theta, kinetic_coefficient_of_friction=self.mu_k, static_coefficient_of_friction=self.mu_s)
         incl_plane.to_corner(DL)
@@ -178,12 +178,14 @@ class BlockSlidingDownInclinedPlane(Scene):
 
         block = MovingBlock(mass=self.m, start_point=incl_plane.get_vertices()[
                             1], end_point=incl_plane.get_vertices()[2])
-        
-        a = self.g * (math.sin(ang) - self.mu_k * math.cos(ang))
-        total_time = (-self.v0 + math.sqrt(self.v0**2 + 2*a*block.path_length)) / a
+
         if self.mu_s >= math.tan(ang):
             a = 0
             total_time = 0
+        else:
+            a = self.g * (math.sin(ang) - self.mu_k * math.cos(ang))
+            total_time = (-self.v0 + math.sqrt(self.v0 **
+                                               2 + 2*a*block.path_length)) / a
 
         if self.show_legend:
             self.add_legend(self.combine_mu)
@@ -198,81 +200,120 @@ class BlockSlidingDownInclinedPlane(Scene):
         self.wait(total_time + 1)
 
     def show_force_vectors(self, block):
+        ang = self.theta * DEGREES
+        mg = self.force_scale * self.m * self.g
+        mgsin = mg * math.sin(ang)
+        mgcos = mg * math.cos(ang)
+
         def get_polar_vector(length, angle):
             return Vector(length*np.array([math.cos(angle), math.sin(angle), 0]))
 
-        grav = get_polar_vector(self.force_scale*self.m*self.g, -PI/2).set_color(self.force_colors['gravity'])
-        norm = get_polar_vector(self.force_scale*self.m*self.g*math.cos(self.theta*DEGREES), PI/2-self.theta*DEGREES).set_color(self.force_colors['normal'])
-        if self.mu_s >= math.tan(self.theta*DEGREES):
-            fric = Vector(-(grav.get_end() + norm.get_end()))
+        grav = get_polar_vector(
+            mg, -PI/2).set_color(self.force_colors['gravity'])
+        norm = get_polar_vector(
+            mgcos, PI/2-ang).set_color(self.force_colors['normal'])
+        if self.mu_s >= math.tan(ang):
+            fric = get_polar_vector(mgsin, PI-ang)
+            total = Vector(ORIGIN)
         else:
-            fric = get_polar_vector(self.force_scale*self.mu_k*self.m*self.g*math.cos(self.theta*DEGREES), PI-self.theta*DEGREES)
+            fric = get_polar_vector(self.mu_k*mgcos, PI-ang)
+            total = get_polar_vector(
+                mg*((math.sin(ang)-self.mu_k*math.cos(ang))), -ang)
         fric.set_color(self.force_colors['friction'])
-        
-        forces = VGroup(grav, norm, fric)
-        edges = VGroup()
+        total.set_color(self.force_colors['total'])
 
+        forces = VGroup(grav, norm, fric)
         if self.show_total_force_vector:
-            print("blinggg")
-            total = get_polar_vector(self.force_scale*self.m*self.g*((math.sin(self.theta*DEGREES)-self.mu_k*math.cos(self.theta*DEGREES))), -self.theta*DEGREES)
-            total.set_color(self.force_colors['total'])
             forces.add(total)
 
         if self.break_force_into_components:
-            vert_comp = DashedLine(start=ORIGIN, end=-norm.get_end()).set_color(self.force_colors['gravity'])
-            horz_comp = DashedLine(start=vert_comp.get_end(), end=grav.get_end()).set_color(self.force_colors['gravity'])
+            vert_comp = DashedLine(start=ORIGIN, end=-norm.get_end(),
+                                   stroke_width=2).set_color(self.force_colors['gravity'])
+            horz_comp = DashedLine(start=vert_comp.get_end(), end=grav.get_end(
+            ), stroke_width=2).set_color(self.force_colors['gravity'])
             forces.add(vert_comp, horz_comp)
 
             def update_horz(horz):
                 horz.put_start_and_end_on(vert_comp.get_end(), grav.get_end())
             horz_comp.add_updater(update_horz)
 
+        bottom_offset = -block.get_height()/3.33 * \
+            np.array([math.sin(ang), math.cos(ang), 0])
+        top_offset = -bottom_offset
+        left_offset = -block.get_width()/2.33 * \
+            np.array([math.cos(-ang), math.sin(-ang), 0])
+        right_offset = -left_offset
+
         def move_to_block(vectors):
+            force_positions = {
+                grav: block.get_center(),
+                norm: block.get_center(),
+                fric: block.get_center(),
+                total: block.get_center(),
+                vert_comp: block.get_center(),
+                horz_comp: block.get_center(),
+            }
+            if self.set_forces_to_block_edge:
+                force_positions[grav] += bottom_offset
+                force_positions[norm] += top_offset
+                force_positions[fric] += left_offset
+                force_positions[total] += right_offset
+                force_positions[vert_comp] += bottom_offset
+
             for v in vectors:
-                v.move_to(block.get_center()).shift(v.get_length()/2*v.get_unit_vector())
+                v.move_to(force_positions[v]).shift(
+                    v.get_length()/2*v.get_unit_vector())
 
-        forces.add_updater(move_to_block)
-
-        if self.clip_forces_behind_block:
+        move_to_block(forces)
+        if self.set_forces_to_block_edge:
             self.add_foreground_mobject(block)
         self.play(ShowCreation(forces))
+        forces.add_updater(move_to_block)
         self.wait(self.time_before_slide)
         if self.hide_forces_in_slide:
-            self.remove(forces)
+            self.play(Uncreate(forces))
 
-        
-
-    def add_legend(self, combine_mu, position=UR, scale=0.7,
-                   show_m=True, show_theta=True, show_mu_k=True, show_mu_s=True, show_g=False):
+    def add_legend(self, scale=0.6,
+                   show_m=True, show_theta=True, show_mu_k=True, show_mu_s=True, combine_mu=True, show_g=True):
 
         m_leg = TexMobject("m", "=", "\SI{%s}{kg}" % (self.m))
         m_leg[0].align_to(m_leg[1], RIGHT).next_to(m_leg[1], LEFT)
         m_leg[2].align_to(m_leg[1], LEFT).next_to(m_leg[1], RIGHT)
+        if show_m:
+            last = m_leg[1]
 
         theta_leg = TexMobject("\\theta", "=", "%s ^\\circ" % (self.theta))
-        theta_leg[0].align_to(m_leg[0], RIGHT)
-        theta_leg[1].align_to(m_leg[1], LEFT)
-        theta_leg[2].align_to(m_leg[2], LEFT)
+        theta_leg[1].next_to(last, DOWN, buff=MED_LARGE_BUFF)
+        theta_leg[0].next_to(theta_leg[1], LEFT)
+        theta_leg[2].next_to(theta_leg[1], RIGHT)
+        if show_theta:
+            last = theta_leg[1]
 
         mu_leg = TexMobject("\\mu", "=", "\\num{%s}" % (self.mu_k))
-        mu_leg[0].align_to(m_leg[0], RIGHT)
-        mu_leg[1].align_to(m_leg[1], LEFT)
-        mu_leg[2].align_to(m_leg[2], LEFT)
-        
+        mu_leg[1].next_to(last, DOWN, buff=MED_LARGE_BUFF)
+        mu_leg[0].next_to(mu_leg[1], LEFT)
+        mu_leg[2].next_to(mu_leg[1], RIGHT)
+        if combine_mu:
+            last = mu_leg[1]
+
         mu_k_leg = TexMobject("\\mu_k", "=", "\\num{%s}" % (self.mu_k))
-        mu_k_leg[0].align_to(m_leg[0], RIGHT)
-        mu_k_leg[1].align_to(m_leg[1], LEFT)
-        mu_k_leg[2].align_to(m_leg[2], LEFT)
+        mu_k_leg[1].next_to(last, DOWN, buff=MED_LARGE_BUFF)
+        mu_k_leg[0].next_to(mu_k_leg[1], LEFT)
+        mu_k_leg[2].next_to(mu_k_leg[1], RIGHT)
+        if not combine_mu and show_mu_k:
+            last = mu_k_leg[1]
 
         mu_s_leg = TexMobject("\\mu_s", "=", "\\num{%s}" % (self.mu_s))
-        mu_s_leg[0].align_to(m_leg[0], RIGHT)
-        mu_s_leg[1].align_to(m_leg[1], LEFT)
-        mu_s_leg[2].align_to(m_leg[2], LEFT)
+        mu_s_leg[1].next_to(last, DOWN, buff=MED_LARGE_BUFF)
+        mu_s_leg[0].next_to(mu_s_leg[1], LEFT)
+        mu_s_leg[2].next_to(mu_s_leg[1], RIGHT)
+        if not combine_mu and show_mu_s:
+            last = mu_s_leg[1]
 
         g_leg = TexMobject("g", "=", "\\SI{%s}{\\unitfrac{m}{s^2}}" % (self.g))
-        g_leg[0].align_to(m_leg[0], RIGHT)
-        g_leg[1].align_to(m_leg[1], LEFT)
-        g_leg[2].align_to(m_leg[2], LEFT)
+        g_leg[1].next_to(last, DOWN, buff=MED_LARGE_BUFF)
+        g_leg[0].next_to(g_leg[1], LEFT)
+        g_leg[2].next_to(g_leg[1], RIGHT)
 
         legend = VGroup()
 
@@ -290,4 +331,4 @@ class BlockSlidingDownInclinedPlane(Scene):
         if show_g:
             legend.add(g_leg)
 
-        self.add(legend.arrange(DOWN).scale(scale).to_corner(UR))
+        self.add(legend.scale(scale).to_corner(UR))
