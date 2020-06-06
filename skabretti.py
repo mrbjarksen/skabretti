@@ -16,7 +16,7 @@ from manimlib.imports import *
 #         self.add(self.unit_sign)
 #
 # (sem sagt færa seinni blokkina undir fyrri og bæta við (*) í henni)
-# Einnig þarf að bæta '"unit_buff": 0.15,' við CONFIG dictiðþ
+# Einnig þarf að bæta '"unit_buff": 0.15,' við CONFIG dictið.
 
 
 class Block(Rectangle):
