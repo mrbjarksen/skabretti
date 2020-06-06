@@ -140,7 +140,7 @@ class BlockSlidingDownInclinedPlane(Scene):
         "mu_s": 1,
         "g": 9.82,
         "v0": 0,
-        "s0": 3,
+        "s0": 0,
 
         "combine_mu": True,
         "show_legend": True,
@@ -198,7 +198,7 @@ class BlockSlidingDownInclinedPlane(Scene):
                                                2 + 2*a*block.path_length)) / a
 
         if self.show_legend:
-            self.add_legend(combine_mu=self.combine_mu)
+            self.add_legend()
 
         self.add(incl_plane, block)
         if self.show_individual_force_vectors or self.show_total_force_vector:
