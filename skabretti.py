@@ -1,5 +1,23 @@
 from manimlib.imports import *
 
+### ATH ###
+# Til þess að hraðagildið í legendinu líti ekki shitty út
+# er hægt að breyta DecimalNumber klasanum (manimlib/mobject/numbers)
+# á eftirfarandi hátt:
+#
+#     self.arrange(
+#         buff=self.digit_to_digit_buff,
+#         aligned_edge=DOWN
+#     )
+#
+#     if self.unit is not None:
+#         self.unit_sign = SingleStringTexMobject(self.unit, color=self.color)
+#         self.unit_sign.next_to(self, RIGHT, buff=self.unit_buff) (*)
+#         self.add(self.unit_sign)
+#
+# (sem sagt færa seinni blokkina undir fyrri og bæta við (*) í henni)
+# Einnig þarf að bæta '"unit_buff": 0.15,' við CONFIG dictiðþ
+
 
 class Block(Rectangle):
     CONFIG = {
@@ -149,16 +167,19 @@ class BlockSlidingDownInclinedPlane(Scene):
             "theta": True,
             "mu_k": True,
             "mu_s": True,
-            "g": False,
-            "a": False,
-            "v": False,
+            "g": True,
+            "av_seperator": True,
+            "a": True,
+            "v": True,
+            "force_seperator": True,
             "forces": True,
         },
+        "legend_scale": 0.8,
         "show_individual_force_vectors": True,
         "show_total_force_vector": True,
         "set_forces_to_block_edge": True,
         "force_scale": 0.2,
-        "hide_forces_in_slide": True,
+        "hide_forces_in_slide": False,
         "show_force_names_by_vectors": True,
         "break_force_into_components": True,
         "force_colors": {
@@ -180,11 +201,10 @@ class BlockSlidingDownInclinedPlane(Scene):
         if self.combine_mu:
             self.mu_s = self.mu_k
 
-        incl_plane = InclinedPlane(
-            angle=self.theta, kinetic_coefficient_of_friction=self.mu_k, static_coefficient_of_friction=self.mu_s)
+        incl_plane = InclinedPlane(angle=self.theta)
         incl_plane.to_corner(DL)
 
-        ang = incl_plane.angle*DEGREES
+        ang = self.theta*DEGREES
 
         block = MovingBlock(mass=self.m, start_point=incl_plane.get_vertices()[
                             1], end_point=incl_plane.get_vertices()[2], displacement=self.s0)
@@ -198,7 +218,7 @@ class BlockSlidingDownInclinedPlane(Scene):
                                                2 + 2*a*block.path_length)) / a
 
         if self.show_legend:
-            self.add_legend()
+            self.add_legend(block)
 
         self.add(incl_plane, block)
         if self.show_individual_force_vectors or self.show_total_force_vector:
@@ -209,6 +229,7 @@ class BlockSlidingDownInclinedPlane(Scene):
         block.start_move(a, self.v0)
         self.wait(total_time + 1)
 
+    # Frekar ljótur kóði en whatever
     def show_force_vectors(self, block):
         ang = self.theta * DEGREES
         mg = self.force_scale * self.m * self.g
@@ -251,6 +272,7 @@ class BlockSlidingDownInclinedPlane(Scene):
                 horz.put_start_and_end_on(vert_comp.get_end(), grav.get_end())
             horz_comp.add_updater(update_horz)
 
+        # ég hef ekki hugmynd af hverju það er 2.33 og 3.33 hérna, ætti bæði að vera 2 ¯\_(ツ)_/¯
         bottom_offset = -block.get_height()/3.33 * \
             np.array([math.sin(ang), math.cos(ang), 0])
         top_offset = -bottom_offset
@@ -315,61 +337,60 @@ class BlockSlidingDownInclinedPlane(Scene):
                 self.play(Uncreate(names))
             self.play(Uncreate(forces))
 
-    def add_legend(self, scale=0.8):
+    def add_legend(self, block):
+        mg = self.m * self.g
+        mgsin = mg * math.sin(self.theta*DEGREES)
+        mgcos = mg * math.cos(self.theta*DEGREES)
+        a = round(self.g * (math.sin(self.theta*DEGREES) - self.mu_k * math.cos(self.theta*DEGREES)), 2)
 
-        m_leg = TexMobject("m", "=", "\SI{%s}{kg}" % (self.m))
-        m_leg[0].align_to(m_leg[1], RIGHT).next_to(m_leg[1], LEFT)
-        m_leg[2].align_to(m_leg[1], LEFT).next_to(m_leg[1], RIGHT)
-        if self.show_in_legend['m']:
-            last = m_leg[1]
+        vals = {
+            "m": TexMobject("\SI{%s}{kg}" % (self.m)),
+            "theta": TexMobject("%s ^\\circ" % (self.theta)),
+            "mu_k": TexMobject("\\num{%s}" % (self.mu_k)),
+            "mu_s": TexMobject("\\num{%s}" % (self.mu_s)),
+            "g": TexMobject("\\SI{%s}{\\unitfrac{m}{s^2}}" % (self.g)),
+            "a": TexMobject("\\SI{%s}{\\unitfrac{m}{s^2}}" % (max(0, a))),
+            "v": DecimalNumber(block.velocity, unit="\\unitfrac{m}{s}}").add_updater(lambda v: v.set_value(block.velocity)),
+            "forces": {
+                "gravity": TexMobject("\\SI{%s}{N}" % (round(mg, 2))),
+                "normal": TexMobject("\\SI{%s}{N}" % (round(mgcos, 2))),
+                "friction": TexMobject("\\SI{%s}{N}" % (round(mgsin, 2))),
+                "total": TexMobject("\\SI{%s}{N}" % (max(0, round(self.m*a, 2))))
+            }
+        }
 
-        theta_leg = TexMobject("\\theta", "=", "%s ^\\circ" % (self.theta))
-        theta_leg[1].next_to(last, DOWN, buff=MED_LARGE_BUFF)
-        theta_leg[0].next_to(theta_leg[1], LEFT)
-        theta_leg[2].next_to(theta_leg[1], RIGHT)
-        if self.show_in_legend['theta']:
-            last = theta_leg[1]
-
-        mu_leg = TexMobject("\\mu", "=", "\\num{%s}" % (self.mu_k))
-        mu_leg[1].next_to(last, DOWN, buff=MED_LARGE_BUFF)
-        mu_leg[0].next_to(mu_leg[1], LEFT)
-        mu_leg[2].next_to(mu_leg[1], RIGHT)
-        if self.combine_mu and self.show_in_legend['mu_k']:
-            last = mu_leg[1]
-
-        mu_k_leg = TexMobject("\\mu_k", "=", "\\num{%s}" % (self.mu_k))
-        mu_k_leg[1].next_to(last, DOWN, buff=MED_LARGE_BUFF)
-        mu_k_leg[0].next_to(mu_k_leg[1], LEFT)
-        mu_k_leg[2].next_to(mu_k_leg[1], RIGHT)
-        if not self.combine_mu and self.show_in_legend['mu_k']:
-            last = mu_k_leg[1]
-
-        mu_s_leg = TexMobject("\\mu_s", "=", "\\num{%s}" % (self.mu_s))
-        mu_s_leg[1].next_to(last, DOWN, buff=MED_LARGE_BUFF)
-        mu_s_leg[0].next_to(mu_s_leg[1], LEFT)
-        mu_s_leg[2].next_to(mu_s_leg[1], RIGHT)
-        if not self.combine_mu and self.show_in_legend['mu_s']:
-            last = mu_s_leg[1]
-
-        g_leg = TexMobject("g", "=", "\\SI{%s}{\\unitfrac{m}{s^2}}" % (self.g))
-        g_leg[1].next_to(last, DOWN, buff=MED_LARGE_BUFF)
-        g_leg[0].next_to(g_leg[1], LEFT)
-        g_leg[2].next_to(g_leg[1], RIGHT)
-
+        last = ORIGIN
         legend = VGroup()
 
-        if self.show_in_legend['m']:
-            legend.add(m_leg)
-        if self.show_in_legend['theta']:
-            legend.add(theta_leg)
-        if self.show_in_legend['mu_k']:
-            if self.combine_mu:
-                legend.add(mu_leg)
-            else:
-                legend.add(mu_k_leg)
-        if self.show_in_legend['mu_s'] and not self.combine_mu:
-            legend.add(mu_s_leg)
-        if self.show_in_legend['g']:
-            legend.add(g_leg)
+        def add_to_legend(c_leg, mylast):
+            c_leg[1].next_to(mylast, DOWN, buff=MED_LARGE_BUFF)
+            c_leg[0].align_to(c_leg[1], RIGHT).next_to(c_leg[1], LEFT)
+            c_leg[2].align_to(c_leg[1], LEFT).next_to(c_leg[1], RIGHT)
+            legend.add(c_leg)
+            mylast = c_leg[1].get_center()
+            return mylast
 
-        self.add(legend.scale(scale).to_corner(UR))
+        for comp in self.show_in_legend:
+            if self.show_in_legend[comp]:
+                if comp == "forces":
+                    for f_comp in vals[comp]:
+                        last = add_to_legend(TexMobject(self.force_names[f_comp], "=").add(vals[comp][f_comp]).set_color(self.force_colors[f_comp]), last)
+                    continue
+
+                if comp in ("av_seperator", "force_seperator"):
+                    sep = Line(legend.get_left(), legend.get_right(), stroke_width=1)
+                    sep.next_to(last, DOWN, buff=MED_LARGE_BUFF).shift(np.array([legend.get_x()-sep.get_x(), 0, 0]))
+                    legend.add(sep)
+                    last = last + np.array([0, sep.get_y()-last[1], 0])
+                    continue
+
+                name = comp
+                if comp == "mu_k" and self.combine_mu:
+                    name = "\\mu"
+                elif comp in ("theta", "mu_k", "mu_s"):
+                    name = "\\" + name
+                    self.show_in_legend["mu_s"] = False 
+                
+                last = add_to_legend(TexMobject(name, "=").add(vals[comp]), last)
+
+        self.add(legend.scale(self.legend_scale).to_corner(UR))
