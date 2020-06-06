@@ -137,20 +137,29 @@ class BlockSlidingDownInclinedPlane(Scene):
         "m": 1,
         "theta": 30,  # degrees
         "mu_k": 0.3,
-        "mu_s": 0.2,
+        "mu_s": 1,
         "g": 9.82,
         "v0": 0,
-        "s0": 0,
+        "s0": 3,
 
         "combine_mu": True,
         "show_legend": True,
+        "show_in_legend": {
+            "m": True,
+            "theta": True,
+            "mu_k": True,
+            "mu_s": True,
+            "g": False,
+            "a": False,
+            "v": False,
+            "forces": True,
+        },
         "show_individual_force_vectors": True,
         "show_total_force_vector": True,
         "set_forces_to_block_edge": True,
         "force_scale": 0.2,
         "hide_forces_in_slide": True,
         "show_force_names_by_vectors": True,
-        "show_force_names_in_legend": False,
         "break_force_into_components": True,
         "force_colors": {
             "gravity": BLUE,
@@ -160,7 +169,7 @@ class BlockSlidingDownInclinedPlane(Scene):
         },
         "force_names": {
             "gravity": "F_g",
-            "normal": "F_N",
+            "normal": "\\text{\\textit{Þ}}",
             "friction": "F_{\\text{nún}}",
             "total": "F_{\\text{heild}}",
         },
@@ -306,41 +315,40 @@ class BlockSlidingDownInclinedPlane(Scene):
                 self.play(Uncreate(names))
             self.play(Uncreate(forces))
 
-    def add_legend(self, scale=0.8,
-                   show_m=True, show_theta=True, show_mu_k=True, show_mu_s=True, combine_mu=True, show_g=True):
+    def add_legend(self, scale=0.8):
 
         m_leg = TexMobject("m", "=", "\SI{%s}{kg}" % (self.m))
         m_leg[0].align_to(m_leg[1], RIGHT).next_to(m_leg[1], LEFT)
         m_leg[2].align_to(m_leg[1], LEFT).next_to(m_leg[1], RIGHT)
-        if show_m:
+        if self.show_in_legend['m']:
             last = m_leg[1]
 
         theta_leg = TexMobject("\\theta", "=", "%s ^\\circ" % (self.theta))
         theta_leg[1].next_to(last, DOWN, buff=MED_LARGE_BUFF)
         theta_leg[0].next_to(theta_leg[1], LEFT)
         theta_leg[2].next_to(theta_leg[1], RIGHT)
-        if show_theta:
+        if self.show_in_legend['theta']:
             last = theta_leg[1]
 
         mu_leg = TexMobject("\\mu", "=", "\\num{%s}" % (self.mu_k))
         mu_leg[1].next_to(last, DOWN, buff=MED_LARGE_BUFF)
         mu_leg[0].next_to(mu_leg[1], LEFT)
         mu_leg[2].next_to(mu_leg[1], RIGHT)
-        if combine_mu:
+        if self.combine_mu and self.show_in_legend['mu_k']:
             last = mu_leg[1]
 
         mu_k_leg = TexMobject("\\mu_k", "=", "\\num{%s}" % (self.mu_k))
         mu_k_leg[1].next_to(last, DOWN, buff=MED_LARGE_BUFF)
         mu_k_leg[0].next_to(mu_k_leg[1], LEFT)
         mu_k_leg[2].next_to(mu_k_leg[1], RIGHT)
-        if not combine_mu and show_mu_k:
+        if not self.combine_mu and self.show_in_legend['mu_k']:
             last = mu_k_leg[1]
 
         mu_s_leg = TexMobject("\\mu_s", "=", "\\num{%s}" % (self.mu_s))
         mu_s_leg[1].next_to(last, DOWN, buff=MED_LARGE_BUFF)
         mu_s_leg[0].next_to(mu_s_leg[1], LEFT)
         mu_s_leg[2].next_to(mu_s_leg[1], RIGHT)
-        if not combine_mu and show_mu_s:
+        if not self.combine_mu and self.show_in_legend['mu_s']:
             last = mu_s_leg[1]
 
         g_leg = TexMobject("g", "=", "\\SI{%s}{\\unitfrac{m}{s^2}}" % (self.g))
@@ -350,18 +358,18 @@ class BlockSlidingDownInclinedPlane(Scene):
 
         legend = VGroup()
 
-        if show_m:
+        if self.show_in_legend['m']:
             legend.add(m_leg)
-        if show_theta:
+        if self.show_in_legend['theta']:
             legend.add(theta_leg)
-        if show_mu_k:
-            if combine_mu:
+        if self.show_in_legend['mu_k']:
+            if self.combine_mu:
                 legend.add(mu_leg)
             else:
                 legend.add(mu_k_leg)
-        if show_mu_s and not combine_mu:
+        if self.show_in_legend['mu_s'] and not self.combine_mu:
             legend.add(mu_s_leg)
-        if show_g:
+        if self.show_in_legend['g']:
             legend.add(g_leg)
 
         self.add(legend.scale(scale).to_corner(UR))
