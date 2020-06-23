@@ -78,15 +78,23 @@ class MovingBlock(Block):
         self.rotate(ang)
         self.move_to(path.get_start())
 
+        self.stopped, self.last_velocity = False, 0
         def update_block(self, dt):
-            self.velocity += self.acceleration * dt
-            self.displacement += self.velocity * dt
-            self.move_to(straight_path(self.true_path.get_start(
-            ), self.true_path.get_end(), self.displacement / self.path_length))
-            if self.displacement >= self.path_length:
-                self.velocity = 0
-                self.acceleration = 0
-                self.move_to(self.true_path.get_end())
+            if not self.stopped:
+                self.velocity += self.acceleration * dt
+                self.displacement += self.velocity * dt
+                self.move_to(straight_path(
+                    self.true_path.get_start(), 
+                    self.true_path.get_end(), 
+                    self.displacement / self.path_length
+                ))
+
+                if self.displacement >= self.path_length:
+                    self.stopped = True
+                    self.last_velocity = self.velocity
+                    self.velocity = 0
+                    self.acceleration = 0
+                    self.move_to(self.true_path.get_end())
 
         self.add_updater(update_block)
 
@@ -142,8 +150,7 @@ class InclinedPlane(Polygon):
     def add_angle_label(self):
         ang = self.angle * DEGREES
         angle_name = TexMobject(self.angle_label)
-        angle_name.move_to(self.get_vertices()[2] + (1 + self.angle_label_buffer)
-                           * self.arc_radius * np.array((-math.cos(ang/2), math.sin(ang/2), 0)))
+        angle_name.move_to(self.get_vertices()[2] + (1 + self.angle_label_buffer) * self.arc_radius * np.array((-math.cos(ang/2), math.sin(ang/2), 0)))
         angle_name.scale(min(self.angle_label_scale, abs(
             angle_name.get_x()-self.get_vertices()[2][0]) * math.tan(ang)))
         self.add(angle_name)
@@ -153,8 +160,8 @@ class BlockSlidingDownInclinedPlane(Scene):
     CONFIG = {
         # Values (in SI-units)
         "m": 1,
-        "theta": 17.5, # degrees
-        "mu_k": 0.3,
+        "theta": 30, # degrees
+        "mu_k": 0.8,
         "mu_s": 0.5,
         "g": 9.82,
         "v0": 0,
@@ -164,8 +171,8 @@ class BlockSlidingDownInclinedPlane(Scene):
         "show_legend": True,
         "show_in_legend": {
             "m": False,
-            "theta": True,
-            "mu_k": False,
+            "theta": False,
+            "mu_k": True,
             "mu_s": False,
             "g": False,
             "av_seperator": True,
@@ -176,7 +183,7 @@ class BlockSlidingDownInclinedPlane(Scene):
         },
         "legend_scale": 0.8,
         "show_individual_force_vectors": False,
-        "show_total_force_vector": False,˘˘˘
+        "show_total_force_vector": False,
         "set_forces_to_block_edge": True,
         "force_scale": 0.22,
         "hide_forces_in_slide": False,
@@ -206,16 +213,19 @@ class BlockSlidingDownInclinedPlane(Scene):
 
         ang = self.theta*DEGREES
 
-        block = MovingBlock(mass=self.m, start_point=incl_plane.get_vertices()[
-                            1], end_point=incl_plane.get_vertices()[2], displacement=self.s0)
+        block = MovingBlock(
+            mass=self.m, 
+            start_point=incl_plane.get_vertices()[1], 
+            end_point=incl_plane.get_vertices()[2], 
+            displacement=self.s0
+        )
 
         if self.mu_s >= math.tan(ang):
             a = 0
             total_time = 0
         else:
             a = self.g * (math.sin(ang) - self.mu_k * math.cos(ang))
-            total_time = (-self.v0 + math.sqrt(self.v0 **
-                                               2 + 2*a*block.path_length)) / a
+            total_time = (-self.v0 + math.sqrt(self.v0 ** 2 + 2*a*block.path_length)) / a
 
         if self.show_legend:
             self.add_legend(block)
@@ -350,7 +360,8 @@ class BlockSlidingDownInclinedPlane(Scene):
             "mu_s": TexMobject("\\num{%s}" % (self.mu_s)),
             "g": TexMobject("\\SI{%s}{\\unitfrac{m}{s^2}}" % (self.g)),
             "a": TexMobject("\\SI{%s}{\\unitfrac{m}{s^2}}" % (max(0, a))),
-            "v": DecimalNumber(block.velocity, unit="\\unitfrac{m}{s}}", digit_to_digit_buff=0.07).add_updater(lambda v: v.set_value(block.velocity)),
+            "v": DecimalNumber(block.velocity, unit="\\unitfrac{m}{s}}", digit_to_digit_buff=0.06)
+                 .add_updater(lambda v: v.set_value(block.velocity if not block.stopped else block.last_velocity)),
             "forces": {
                 "gravity": TexMobject("\\SI{%s}{N}" % (round(mg, 2))),
                 "normal": TexMobject("\\SI{%s}{N}" % (round(mgcos, 2))),
@@ -358,6 +369,8 @@ class BlockSlidingDownInclinedPlane(Scene):
                 "total": TexMobject("\\SI{%s}{N}" % (max(0, round(self.m*a, 2))))
             }
         }
+        if self.mu_s >= math.tan(self.theta*DEGREES):
+            vals["v"] = TexMobject("\\SI{0}{\\unitfrac{m}{s}}")
 
         last = ORIGIN
         legend = VGroup()
