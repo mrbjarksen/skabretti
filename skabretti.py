@@ -153,9 +153,9 @@ class BlockSlidingDownInclinedPlane(Scene):
     CONFIG = {
         # Values (in SI-units)
         "m": 1,
-        "theta": 30,  # degrees
+        "theta": 17.5, # degrees
         "mu_k": 0.3,
-        "mu_s": 1,
+        "mu_s": 0.5,
         "g": 9.82,
         "v0": 0,
         "s0": 0,
@@ -163,22 +163,22 @@ class BlockSlidingDownInclinedPlane(Scene):
         "combine_mu": True,
         "show_legend": True,
         "show_in_legend": {
-            "m": True,
+            "m": False,
             "theta": True,
-            "mu_k": True,
-            "mu_s": True,
-            "g": True,
+            "mu_k": False,
+            "mu_s": False,
+            "g": False,
             "av_seperator": True,
             "a": True,
             "v": True,
-            "force_seperator": True,
-            "forces": True,
+            "force_seperator": False,
+            "forces": False,
         },
         "legend_scale": 0.8,
-        "show_individual_force_vectors": True,
-        "show_total_force_vector": True,
+        "show_individual_force_vectors": False,
+        "show_total_force_vector": False,˘˘˘
         "set_forces_to_block_edge": True,
-        "force_scale": 0.2,
+        "force_scale": 0.22,
         "hide_forces_in_slide": False,
         "show_force_names_by_vectors": True,
         "break_force_into_components": True,
@@ -345,12 +345,12 @@ class BlockSlidingDownInclinedPlane(Scene):
 
         vals = {
             "m": TexMobject("\SI{%s}{kg}" % (self.m)),
-            "theta": TexMobject("%s ^\\circ" % (self.theta)),
+            "theta": TexMobject("\\num{%s}^\\circ" % (self.theta)),
             "mu_k": TexMobject("\\num{%s}" % (self.mu_k)),
             "mu_s": TexMobject("\\num{%s}" % (self.mu_s)),
             "g": TexMobject("\\SI{%s}{\\unitfrac{m}{s^2}}" % (self.g)),
             "a": TexMobject("\\SI{%s}{\\unitfrac{m}{s^2}}" % (max(0, a))),
-            "v": DecimalNumber(block.velocity, unit="\\unitfrac{m}{s}}").add_updater(lambda v: v.set_value(block.velocity)),
+            "v": DecimalNumber(block.velocity, unit="\\unitfrac{m}{s}}", digit_to_digit_buff=0.07).add_updater(lambda v: v.set_value(block.velocity)),
             "forces": {
                 "gravity": TexMobject("\\SI{%s}{N}" % (round(mg, 2))),
                 "normal": TexMobject("\\SI{%s}{N}" % (round(mgcos, 2))),
@@ -380,6 +380,7 @@ class BlockSlidingDownInclinedPlane(Scene):
                 if comp in ("av_seperator", "force_seperator"):
                     sep = Line(legend.get_left(), legend.get_right(), stroke_width=1)
                     sep.next_to(last, DOWN, buff=MED_LARGE_BUFF).shift(np.array([legend.get_x()-sep.get_x(), 0, 0]))
+                    sep.add_updater(lambda s: s.set_width(legend.get_width()).shift(np.array([legend.get_center()[0]-s.get_center()[0], 0, 0])))
                     legend.add(sep)
                     last = last + np.array([0, sep.get_y()-last[1], 0])
                     continue
