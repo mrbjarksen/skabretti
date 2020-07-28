@@ -25,8 +25,8 @@ class Block(Rectangle):
         "fill_color": WHITE,
         "stroke_opacity": 0.0,
         "show_label": True,
-        "label": "m",
-        "max_label_scale": 1,
+        "label_text": "m",
+        "label_scale": 1,
         "label_color": BLACK,
         "unit_height": 0.75,
         "width_to_height_ratio": (1 + 5 ** 0.5) / 2,
@@ -42,15 +42,14 @@ class Block(Rectangle):
         self.width = self.height * self.width_to_height_ratio
         Rectangle.__init__(self, **kwargs)
         self.label = self.get_label()
-        # if self.show_label:
-        #     self.add_label()
 
     def get_label(self):
-        label = TexMobject(self.label, color=self.label_color)
-        label.scale(min(self.max_label_scale, self.height))
-        label.add_updater(lambda l: l.move_to(self.get_center()))
+        return TexMobject(self.label_text, color=self.label_color) \
+               .scale(self.label_scale * self.height) \
+               .add_updater(lambda l: l.move_to(self.get_center()))
 
-    def add_label(self, scene, animate=False, animation=Write):
+    def add_label(self, scene, rotate_by=0, animate=False, animation=Write):
+        self.label.rotate(rotate_by)
         if animate:
             scene.play(animation(self.label))
         else:
@@ -98,6 +97,7 @@ class MovingBlock(Block):
 
     FORCES = {
         "LABELS": {},
+        "COMPS": {}
     }
 
     def __init__(self, **kwargs):
@@ -118,21 +118,20 @@ class MovingBlock(Block):
 
         self.stopped, self.last_velocity = False, 0
         def update_block(self, dt):
-            if not self.stopped:
-                self.velocity += self.acceleration * dt
-                self.displacement += self.velocity * dt
-                self.move_to(straight_path(
+            if self.displacement >= self.path_length:
+                self.last_velocity = self.velocity
+                self.velocity = 0
+                self.acceleration = 0
+                self.displacement = self.path_length
+
+            self.velocity += self.acceleration * dt
+            self.displacement += self.velocity * dt
+
+            self.move_to(straight_path(
                     self.true_path.get_start(), 
                     self.true_path.get_end(), 
                     self.displacement / self.path_length
                 ))
-
-                if self.displacement >= self.path_length:
-                    self.stopped = True
-                    self.last_velocity = self.velocity
-                    self.velocity = 0
-                    self.acceleration = 0
-                    self.move_to(self.true_path.get_end())
 
         self.add_updater(update_block)
 
@@ -140,17 +139,22 @@ class MovingBlock(Block):
         self.acceleration = a
         self.velocity = v
 
+    def move_to_alpha(self, alpha):
+        self.displacement = alpha * self.path_length
+
     def make_force_vector(self, name, vector, position=ORIGIN, **kwargs):
         vec = Vector(**kwargs)
         vec.updater = lambda v: v.put_start_and_end_on(
                 self.get_critical_point_on_block(position), 
                 self.get_critical_point_on_block(position) + vector)
+        vec.updater(vec)
         self.FORCES[name] = vec
 
-    def add_force_vectors(self, scene, *names, animate=True, animation=ShowCreation):
+    def add_force_vectors(self, scene, *names, animate=True, animation=ShowCreation, update=True):
         vecs = [self.FORCES[name] for name in names]
         for vec in vecs:
-            vec.add_updater(vec.updater)
+            if update:
+                vec.add_updater(vec.updater)
         if animate:
             scene.play(*[animation(vec) for vec in vecs])
         else:
@@ -161,32 +165,39 @@ class MovingBlock(Block):
     def remove_force_vectors(self, scene, *names, animate=True, animation=Uncreate):
         vecs = [self.FORCES[name] for name in names]
         for vec in vecs:
-            vec.remove_updater(vec.updater)
+            if vec.updater in vec.get_updaters():
+                vec.remove_updater(vec.updater)
         if animate:
             scene.play(*[animation(vec) for vec in vecs])
         else:
             scene.remove(*vecs)
 
-    def make_force_label(self, scene, name, direction, **kwargs):
-        label = TexMobject("\\vec{%s}" % name)
+    def make_force_label(self, name, text, direction, scale, **kwargs):
+        label = TexMobject(text, **kwargs).scale(scale)
+        label.updater = lambda l: l.next_to(self.FORCES[name].get_end(), direction)
+        label.updater(label)
         self.FORCES["LABELS"][name] = label
-        label.add_updater(lambda l: l.next_to(self.FORCES[name].get_end(), direction, **kwargs))
 
-    def add_force_labels(self, scene, *names, animate=True, animation=Write):
+    def add_force_labels(self, scene, *names, animate=True, animation=Write, update=True):
         labels = [self.FORCES["LABELS"][name] for name in names]
+        for label in labels:
+            if update:
+                label.add_updater(label.updater)
         if animate:
             scene.play(*[animation(label) for label in labels])
         else:
             scene.add(*labels)
 
     def remove_force_labels(self, scene, *names, animate=True, animation=Uncreate):
-        labels = [self.FORCES["LABELS"][name] for name in names]        
+        labels = [self.FORCES["LABELS"][name] for name in names] 
+        for label in labels:
+            if label.updater in label.get_updaters():
+                label.remove_updater(label.updater)       
         if animate:
             scene.play(*[animation(label) for label in labels])
         else:
             scene.remove(*labels)
         
-
 
 class InclinedPlane(Polygon):
     CONFIG = {
@@ -194,7 +205,7 @@ class InclinedPlane(Polygon):
         "show_angle_arc": True,
         "arc_radius": 1,
         "show_angle_label": True,
-        "angle_label": "\\theta",
+        "angle_label_text": "\\theta",
         "angle_label_scale": 1,
         "angle_label_buffer": MED_SMALL_BUFF,
         "max_height": 6,
@@ -221,24 +232,42 @@ class InclinedPlane(Polygon):
         Polygon.__init__(self, *vertices)
 
         self.arc_radius = min(self.arc_radius, width/5)
-        self.get_angle_arc()
-        self.get_angle_label()
-        if self.show_angle_arc:
-            self.add(self.angle_arc)
-        if self.show_angle_label:
-            self.add(self.angle_name)
+        # if self.show_angle_arc:
+        #     self.add(self.angle_arc)
+        # if self.show_angle_label:
+        #     self.add(self.angle_label)
 
     def get_angle_arc(self):
-        ang = self.angle * DEGREES
-        angle_arc = Arc(PI-ang, ang, arc_center=self.get_vertices()[2], radius=self.arc_radius)
-        self.angle_arc = angle_arc
+        return Arc(PI-self.angle*DEGREES, self.angle*DEGREES, arc_center=self.get_vertices()[2], radius=self.arc_radius)
 
     def get_angle_label(self):
         ang = self.angle * DEGREES
-        angle_name = TexMobject(self.angle_label)
-        angle_name.move_to(self.get_vertices()[2] + (1 + self.angle_label_buffer) * self.arc_radius * np.array((-math.cos(ang/2), math.sin(ang/2), 0)))
-        angle_name.scale(min(self.angle_label_scale, abs(angle_name.get_x()-self.get_vertices()[2][0]) * math.tan(ang)))
-        self.angle_name = angle_name
+        angle_label = TexMobject(self.angle_label_text)
+        angle_label.move_to(self.get_vertices()[2] + (1 + self.angle_label_buffer) * self.arc_radius * np.array((-math.cos(ang/2), math.sin(ang/2), 0)))
+        angle_label.scale(min(self.angle_label_scale, abs(angle_label.get_x()-self.get_vertices()[2][0]) * math.tan(ang)))
+        return angle_label
+
+    def add_angle_arc_and_label(self, scene, animate=True, arc_animation=ShowCreation, label_animation=Write):
+        self.angle_arc = self.get_angle_arc()
+        self.angle_label = self.get_angle_label()
+        if animate:
+            scene.play(AnimationGroup(
+                arc_animation(self.angle_arc), 
+                label_animation(self.angle_label), 
+                lag_ratio=0.6
+            ))
+        else:
+            scene.add(self.angle_arc, self.angle_label)
+    
+    def remove_angle_arc_and_label(self, scene, animate=True, animation=Uncreate):
+        if animate:
+            scene.play(AnimationGroup(
+                animation(self.angle_label), 
+                animation(self.angle_arc), 
+                lag_ratio=0.6
+            ))
+        else:
+            scene.remove(self.angle_arc, self.angle_label)
 
 
 class BlockAndInclinedPlaneScene(Scene):
@@ -541,5 +570,670 @@ class BlockAndInclinedPlaneScene(Scene):
 
         return legend.scale(self.legend_scale).to_corner(UR)
 
-class BlockInclinedPlaneDerivation(BlockAndInclinedPlaneScene):
-    pass
+
+class BlockInclinedPlaneDerivation(MovingCameraScene):
+    CONFIG = {
+        "m": 1,
+        "theta": 30,
+        "mu": 0.25,
+        "g": 9.82,
+        "force_scale": 0.2
+    }
+
+    def construct(self):
+        plane = InclinedPlane(
+            angle=self.theta, 
+            show_angle_arc=False, 
+            show_angle_label=False,
+            arc_radius=1.5
+        ).to_corner(DL)
+
+        block = MovingBlock(
+            mass=self.m, 
+            start_point=plane.get_vertices()[1], 
+            end_point=plane.get_vertices()[2], 
+            displacement=1,
+            label_scale=1.25,
+            unit_height=0.9
+        )
+
+        ang = self.theta*DEGREES
+        mg = self.force_scale * self.m * self.g
+        mgcos = mg * math.cos(ang)
+
+        self.forces = {
+            "gravity": {
+                "size": mg,
+                "angle": -PI/2,
+                "origin": DOWN,
+                "color": BLUE,
+                "label_text": "F_g",
+                "label_direction": RIGHT
+            },
+            "normal": {
+                "size": mgcos,
+                "angle": PI/2 - ang,
+                "origin": UP,
+                "color": YELLOW,
+                "label_text": "\\text{\\textit{Þ}}",
+                "label_direction": RIGHT
+            },
+            "friction": {
+                "size": self.mu*mgcos,
+                "angle": PI - ang,
+                "origin": LEFT,
+                "color": RED,
+                "label_text": "F_{\\text{nún}}",
+                "label_direction": UL
+            },
+            "total": {
+                "size": mg*((math.sin(ang)-self.mu*math.cos(ang))),
+                "angle": -ang,
+                "origin": RIGHT,
+                "color": GREEN,
+                "label_text": "F_{\\text{heild}}",
+                "label_direction": RIGHT
+            }
+        }
+
+        self.add(plane, block)
+        self.wait(1)
+        block.add_label(self, rotate_by=-ang, animate=True)
+        self.add_foreground_mobjects(block, block.label)
+        self.wait(0.5)
+        plane.add_angle_arc_and_label(self)
+        self.wait(1)
+
+        a = self.g * (math.sin(ang) - self.mu * math.cos(ang))
+        slide_time = math.sqrt(2*block.path_length/a)
+
+        block.start_move(a)
+        self.wait(slide_time+3)
+
+        self.play(ApplyMethod(block.move_to_alpha, 0.5))
+        block.move_to_alpha(0.5) # veit ekki afh þetta þarf
+        self.wait(0.2)
+
+        plane.remove_angle_arc_and_label(self)
+        self.play(
+            self.camera_frame.set_width, plane.get_width(),
+            self.camera_frame.move_to, block.get_center(),
+        )
+        self.wait(1)
+
+        self.make_forces(block)
+
+        for f in ("gravity", "normal", "friction"):
+            block.add_force_vectors(self, f, update=False)
+            block.add_force_labels(self, f, update=False)
+            if f in ("gravity", "friction"):
+                eq_text = {
+                    "gravity": "mg",
+                    "friction": "\\mu\\text{\\textit{Þ}}"
+                }
+                eq_mob = TexMobject("=", eq_text[f], color=self.forces[f]["color"]) \
+                     .scale(min(0.8, self.forces[f]["size"]), about_point=block.FORCES["LABELS"][f].get_right()) \
+                     .next_to(block.FORCES["LABELS"][f], RIGHT, aligned_edge=DOWN, buff=min(0.18, 0.18*self.forces[f]["size"]))
+                self.play(Write(eq_mob))
+                self.wait(3)
+                self.play(Uncreate(eq_mob))
+            else:
+                self.wait(3)
+
+        self.wait(2)
+        self.play(self.camera_frame.shift, 2.5*RIGHT, run_time=1.25)
+        
+        total_force_eq = TexMobject(
+            self.forces["total"]["label_text"], 
+            "=", self.forces["gravity"]["label_text"], 
+            "+", self.forces["normal"]["label_text"], 
+            "+", self.forces["friction"]["label_text"]).scale(0.75)
+        total_force_eq.move_to(self.camera_frame.get_center() + np.array([
+            self.camera_frame.get_width()/2 - 1,
+            self.camera_frame.get_height()/2 - 1,
+            0
+        ]), aligned_edge=UR)
+        for i, f in zip((0, 2, 4, 6), ("total", "gravity", "normal", "friction")):
+            total_force_eq[i].set_color(self.forces[f]["color"])
+        self.play(AnimationGroup(
+            Write(total_force_eq[0:2]),
+            AnimationGroup(
+                ReplacementTransform(block.FORCES["LABELS"]["gravity"], total_force_eq[2], run_time=1.5),
+                ReplacementTransform(block.FORCES["LABELS"]["normal"], total_force_eq[4], run_time=1.5),
+                ReplacementTransform(block.FORCES["LABELS"]["friction"], total_force_eq[6], run_time=1.5),
+                *[FadeIn(total_force_eq[i]) for i in (3, 5)],
+                lag_ratio=0.2
+            ),
+            lag_ratio=0.2
+        ))
+        self.wait(0.5)
+
+        vec_arrows = {}
+        for i, f in zip((0, 2, 4, 6), ("total", "gravity", "normal", "friction")):
+            arrow = Vector(tip_length=0.045).scale(0.25).set_color(self.forces[f]["color"]).next_to(total_force_eq[i], UP, aligned_edge=LEFT, buff=0.075).shift(0.04*RIGHT)
+            vec_arrows[f] = arrow
+        self.play(AnimationGroup(*[ShowCreation(arr) for arr in vec_arrows.values()], lag_ratio=0.2))
+        self.wait(0.2)
+
+        for f in ("gravity", "normal", "friction"):
+            block.FORCES[f].generate_target()
+        block.FORCES["gravity"].target.move_to(block.get_critical_point_on_block(RIGHT)).shift(self.forces["gravity"]["size"]/2*DOWN)
+        block.FORCES["normal"].target.move_to(block.FORCES["gravity"].target.get_end(), aligned_edge=DL)
+        block.FORCES["friction"].target.move_to(block.FORCES["normal"].target.get_end(), aligned_edge=DR)
+        self.play(AnimationGroup(
+            *[MoveToTarget(block.FORCES[f]) for f in ("gravity", "normal", "friction")],
+            lag_ratio=0.4
+        ))
+        self.wait(1)
+
+        block.add_force_vectors(self, "total", update=False)
+        self.play(AnimationGroup(
+            *[FadeOut(block.FORCES[f]) for f in ("gravity", "normal", "friction")],
+            ReplacementTransform(total_force_eq[0], block.FORCES["LABELS"]["total"]),
+            *[FadeOut(total_force_eq[i]) for i in range(1, 7)],
+            *[FadeOut(arr) for arr in vec_arrows.values()]
+        ))
+        self.wait(1)
+
+        x_vec = Vector(RIGHT, tip_length=0.15, stroke_width=1.25)
+        y_vec = x_vec.copy().rotate(PI/2, about_point=ORIGIN)
+        x_label = TexMobject("x").scale(0.6).next_to(x_vec, RIGHT, buff=SMALL_BUFF)
+        y_label = TexMobject("y").scale(0.6).next_to(y_vec, UP, buff=SMALL_BUFF)
+        block.remove_force_labels(self, "total", animation=FadeOut)
+        axes = VGroup(x_vec, y_vec, x_label, y_label).scale(0.7).move_to(block.get_center()+3*RIGHT)
+        self.play(ShowCreation(axes))
+        self.wait(1)
+        self.play(Rotate(axes, -ang, about_point=x_vec.get_start()))
+        self.wait(0.2)
+
+        plane.scale(4, about_point=block.get_critical_point_on_block(DOWN))
+
+        self.play(
+            *[Rotate(mob, ang, about_point=block.get_center()) for mob in 
+                (plane, block, block.label, block.FORCES["total"], axes)]
+        )
+        self.remove(block, block.label)
+        block.remove_force_vectors(self, "total", animate=False)
+        block = MovingBlock(
+            mass=self.m, 
+            start_point=plane.get_vertices()[1], 
+            end_point=plane.get_vertices()[2], 
+            label_scale=1.25,
+            unit_height=0.9
+        )
+        block.move_to_alpha(0.5)
+        block.add_label(self)
+        for f in self.forces.keys():
+            self.forces[f]["angle"] += ang
+        self.make_forces(block)
+        block.add_force_vectors(self, "total", animate=False, update=True)
+        self.add(block, block.label)
+
+        block.start_move(a)
+        self.wait((math.sqrt(2*a*(block.path_length-block.displacement))) / a + 0.1)
+        self.remove(block, block.FORCES["total"], block.label)
+        block.move_to_alpha(0.5)
+        self.play(
+            FadeIn(block),
+            FadeIn(block.FORCES["total"]),
+            FadeIn(block.label)
+        )
+        block.move_to_alpha(0.5)
+        self.wait(2)
+        self.play(
+            FadeOut(axes),
+            self.camera_frame.set_width, self.camera_frame.get_width() * 1.3,
+            self.camera_frame.shift, 1.5*RIGHT+UP
+        )
+        self.wait(1)
+
+        newt_eq = TexMobject("F_{\\text{heild}}", "=", "m", "a")
+        newt_eq.move_to(self.camera_frame.get_center() + np.array([
+            self.camera_frame.get_width()/2 - 1.5,
+            self.camera_frame.get_height()/2 - 1.5,
+            0
+        ]), aligned_edge=UR)
+        newt_eq[0].set_color(self.forces["total"]["color"])
+        vec_arrows = {}
+        for i, f in zip((0, 3), ("total", "a")):
+            arrow = Vector(tip_length=0.07).scale(0.35-0.05*i).set_color(self.forces[f]["color"] if f in self.forces.keys() else WHITE) \
+                    .next_to(newt_eq[i], UP, aligned_edge=LEFT, buff=0.075).shift((0.04-0.01*i)*RIGHT)
+            vec_arrows[f] = arrow
+        self.play(AnimationGroup(
+            ReplacementTransform(block.FORCES["total"].copy().clear_updaters(), vec_arrows["total"]),
+            FadeIn(newt_eq[0]),
+            ShowCreation(vec_arrows["a"]),
+            Write(newt_eq[1:]),
+            lag_ratio=0.5
+        ))
+        self.wait(1)
+
+        new_force_eq = total_force_eq[2:].scale(1/0.75).next_to(newt_eq[1], LEFT)
+        for i, f in zip((0, 2, 4), ("gravity", "normal", "friction")):
+            arrow = Vector(tip_length=0.07).scale(0.35).set_color(self.forces[f]["color"]) \
+                    .next_to(new_force_eq[i], UP, aligned_edge=LEFT, buff=0.075).shift((0.04)*RIGHT)
+            vec_arrows[f] = arrow
+        total_force = block.FORCES["total"]
+        self.make_forces(block)
+        self.play(AnimationGroup(
+            ReplacementTransform(VGroup(newt_eq[0], vec_arrows["total"]), new_force_eq),
+            Uncreate(total_force.clear_updaters()),
+            *[ShowCreation(block.FORCES[f]) for f in ("gravity", "normal", "friction")],
+            *[ShowCreation(arrow) for arrow in [v for k,v in vec_arrows.items() if k not in ("a", "total")]],
+            lag_ratio=0.05
+        ))
+        self.wait(3)
+
+        projection = block.FORCES["gravity"].copy()
+        projection.rotate(-ang, about_point=projection.get_start()).scale(math.cos(-ang), about_point=projection.get_start())
+        vert_comp = DashedLine(start=projection.get_start(), end=projection.get_end())
+        horz_comp = DashedLine(start=projection.get_end(), end=block.FORCES["gravity"].get_end())
+        comps = VGroup(vert_comp, horz_comp).set_color(self.forces["gravity"]["color"])
+        self.play(ShowCreation(comps))
+        self.wait(1)
+
+        self.camera_frame.save_state()
+        removed_in_grav_section = [r for r in self.get_mobjects() if r not in (block.FORCES["gravity"], comps, plane, self.camera_frame)]
+        self.play(
+            *[FadeOut(thing) for thing in removed_in_grav_section],
+            self.camera_frame.move_to, block.FORCES["gravity"].get_center(),
+            self.camera_frame.set_width, self.camera_frame.get_width()*0.7,
+            lag_ratio=0.15,
+            run_time=2
+        )
+        self.wait(1)
+        ang_line = Line(LEFT, RIGHT)
+        ang_line.set_angle(ang+PI)
+        ang_line.set_length(self.forces["gravity"]["size"]/math.tan(ang)) 
+        ang_line.move_to(block.FORCES["gravity"].get_end(), aligned_edge=DL)
+        ang_line_arc = Arc(PI, ang, arc_center=ang_line.get_start(), radius=0.6)
+        ang_line_label = TexMobject("\\theta").scale(0.6).move_to(ang_line.get_start()).shift(0.85*np.array([math.cos(PI+ang/2), math.sin(PI+ang/2), 0]))
+        grav_line = Line(block.FORCES["gravity"].get_start(), block.FORCES["gravity"].get_end()).match_style(block.FORCES["gravity"])
+        self.add(grav_line)
+        self.play(AnimationGroup(
+            ApplyMethod(self.camera_frame.move_to, VGroup(comps, block.FORCES["gravity"], ang_line, ang_line_arc).get_center()),
+            ShowCreation(ang_line), 
+            ShowCreation(ang_line_arc),
+            FadeIn(ang_line_label),
+            FadeOut(block.FORCES["gravity"].get_tip()),
+            lag_ratio=0.15,
+            run_time=2
+        ))
+        self.wait(1)
+
+        right_angle_plane = Elbow(width=1).scale(0.2).move_to(ang_line.get_end(), aligned_edge=DL).rotate(ang, about_point=ang_line.get_end())
+        right_angle_grav = Elbow(width=1, color=self.forces["gravity"]["color"]).scale(0.15).move_to(vert_comp.get_end(), aligned_edge=DL)
+        similar_angle_plane = VGroup(*[Arc(0, ang-PI/2, arc_center=grav_line.get_start(), radius=r, stroke_width=2) for r in (0.3, 0.25)])
+        similar_angle_grav = VGroup(*[Arc(PI, ang-PI/2, arc_center=grav_line.get_end(), radius=r, stroke_width=2, color=self.forces["gravity"]["color"]) for r in (0.25, 0.2)])
+
+        self.play(AnimationGroup(
+            ShowCreation(right_angle_plane),
+            ShowCreation(right_angle_grav),
+            ShowCreation(similar_angle_plane),
+            ShowCreation(similar_angle_grav),
+            lag_ratio=2,
+            run_time=5
+        ))
+        self.wait(2)
+        
+        ang_line_arc_copy = ang_line_arc.copy()
+        moving_triangle = VGroup(
+            ang_line.copy(), 
+            ang_line_arc_copy, 
+            grav_line.copy(), 
+            Line(ang_line.get_start(), grav_line.get_start()),
+        )
+        moving_triangle.stroke_opacity = 0.2
+
+        moving_triangle.generate_target()
+        moving_triangle.target.rotate(PI, axis=UP)
+        moving_triangle.target.rotate(ang-PI/2)
+        moving_triangle.target.shift(VGroup(grav_line, vert_comp, horz_comp).get_center()-moving_triangle.target.get_center())
+        moving_triangle.target.set_height(vert_comp.get_length())
+        moving_triangle.target.set_width(horz_comp.get_length())
+
+        self.play(MoveToTarget(moving_triangle))
+        self.wait(0.5)
+        self.play(
+            ang_line_label.scale, 0.5,
+            ang_line_label.move_to, grav_line.get_start(),
+            ang_line_label.shift, 0.45 * np.array([math.cos(-PI/2+ang/2), math.sin(-PI/2+ang/2), 0])
+        )
+        self.play(
+            *[FadeOut(thing) for thing in 
+                (*[mob for mob in moving_triangle.submobjects if mob != ang_line_arc_copy], ang_line, ang_line_arc, right_angle_plane, similar_angle_plane, similar_angle_grav)],
+            self.camera_frame.move_to, VGroup(grav_line, vert_comp, horz_comp).get_center(),
+            self.camera_frame.set_width, self.camera_frame.get_width()*0.6,
+            FadeIn(block.FORCES["gravity"])
+        )
+        self.remove(grav_line)
+        self.wait(2)
+
+        grav_eq = TexMobject("m", "g").scale(0.4).move_to(grav_line.get_center()).shift(0.3*RIGHT)
+        vert_eq = TexMobject("m", "g", "\\cos", "{\\theta}").scale(0.4).rotate(PI/2).next_to(vert_comp, LEFT, buff=0.08)
+        horz_eq = TexMobject("m", "g", "\\sin", "{\\theta}").scale(0.4).next_to(horz_comp, DOWN, buff=0.08)
+        self.play(Write(grav_eq))
+        self.wait(1)
+        self.play(
+            ReplacementTransform(grav_eq[0].copy(), vert_eq[0]),
+            ReplacementTransform(grav_eq[0].copy(), horz_eq[0]),
+            ReplacementTransform(grav_eq[1].copy(), vert_eq[1]),
+            ReplacementTransform(grav_eq[1].copy(), horz_eq[1]),
+            ReplacementTransform(ang_line_label.copy(), vert_eq[-1]),
+            ReplacementTransform(ang_line_label.copy(), horz_eq[-1]), 
+            FadeInFrom(vert_eq[-2], 0.2*DOWN),
+            FadeInFrom(horz_eq[-2], 0.2*LEFT),
+            run_time=2      
+        )
+        self.wait(2)
+
+        self.play(
+            ApplyMethod(self.camera_frame.restore),
+            *[FadeOut(thing) for thing in (grav_eq, right_angle_grav, ang_line_arc_copy, ang_line_label)],
+            *[FadeIn(thing) for thing in removed_in_grav_section],
+            run_time=1.8
+        )
+        self.wait(0.75)
+
+        self.play(
+            new_force_eq[0].shift, 1.5*DOWN,
+            vec_arrows["gravity"].shift, 1.5*DOWN,
+            block.FORCES["normal"].set_opacity, 0.25,
+            block.FORCES["friction"].set_opacity, 0.25,
+        )
+        equals = TexMobject("=").next_to(new_force_eq[0], RIGHT)
+
+        grav_vector = Matrix(["mg\\sin{\\theta}", "-mg\\cos{\\theta}"], brackets=("(", ")"), bracket_v_buff=SMALL_BUFF, v_buff=0.9)
+        grav_vector.elements[0].shift((grav_vector.elements[0].get_x()-grav_vector.get_x())*LEFT)
+        grav_vector.scale(0.8).set_color(self.forces["gravity"]["color"])
+
+        norm_vector = Matrix(["0", "\\text{\\textit{Þ}}"], brackets=("(", ")"), bracket_v_buff=SMALL_BUFF, v_buff=0.9)
+        norm_vector.scale(0.8).set_color(self.forces["normal"]["color"])
+
+        fric_vector = Matrix(["-\\mu\\text{\\textit{Þ}}", "0"], brackets=("(", ")"), bracket_v_buff=SMALL_BUFF, v_buff=0.9)
+        fric_vector.scale(0.8).set_color(self.forces["friction"]["color"])
+        fric_vector.elements[1].shift((fric_vector.elements[1].get_x()-fric_vector.get_x())*LEFT)
+
+        accel_vector = Matrix(["a", "0"], brackets=("(", ")"), bracket_v_buff=SMALL_BUFF, v_buff=0.9)
+        accel_vector.scale(0.8)
+
+        y_pos = (grav_vector.elements[0].get_y(), grav_vector.elements[1].get_y())
+        for v in (grav_vector, norm_vector, fric_vector, accel_vector):
+            v.elements[0].set_y(y_pos[0])
+            v.elements[1].set_y(y_pos[1])
+
+        grav_vector.next_to(equals, RIGHT)
+        grav_vector.elements.set_opacity(0)
+        self.play(Write(equals), Write(grav_vector))
+        self.play(
+            Transform(horz_eq, grav_vector.elements[0].copy().set_opacity(1)),
+            Transform(vert_eq, grav_vector.elements[1].copy().set_opacity(1))
+        )
+        self.wait(1)
+
+        grav_vector.elements.set_opacity(1)
+        self.remove(horz_eq, vert_eq)
+        self.play(
+            ApplyMethod(grav_vector.next_to, new_force_eq[1], LEFT, buff=SMALL_BUFF),
+            *[FadeOut(thing) for thing in (new_force_eq[0], vec_arrows["gravity"], equals, comps)],
+            ApplyMethod(block.FORCES["normal"].set_opacity, 1),
+            ApplyMethod(block.FORCES["friction"].set_opacity, 1),
+        )
+        self.wait(1.5)
+
+        self.play(
+            new_force_eq[2].shift, 1.5*DOWN,
+            vec_arrows["normal"].shift, 1.5*DOWN,
+            block.FORCES["gravity"].set_opacity, 0.25,
+            block.FORCES["friction"].set_opacity, 0.25,
+        )
+        equals.next_to(new_force_eq[2])
+        norm_vector.next_to(equals, RIGHT)
+        self.play(Write(equals), Write(norm_vector))
+        self.wait(0.5)
+        norm_width_change = norm_vector.get_width() - new_force_eq[2].get_width() + SMALL_BUFF
+        self.play(
+            ApplyMethod(norm_vector.next_to, new_force_eq[3], LEFT, buff=SMALL_BUFF),
+            ApplyMethod(new_force_eq[1].shift, norm_width_change*LEFT),
+            ApplyMethod(grav_vector.shift, norm_width_change*LEFT),
+            *[FadeOut(thing) for thing in (new_force_eq[2], vec_arrows["normal"], equals)],
+            ApplyMethod(block.FORCES["gravity"].set_opacity, 1),
+            ApplyMethod(block.FORCES["friction"].set_opacity, 1),
+        )
+        self.wait(1.5)
+
+        self.play(
+            new_force_eq[4].shift, 1.5*DOWN,
+            vec_arrows["friction"].shift, 1.5*DOWN,
+            block.FORCES["gravity"].set_opacity, 0.25,
+            block.FORCES["normal"].set_opacity, 0.25,
+        )
+        equals.next_to(new_force_eq[4])
+        fric_vector.next_to(equals, RIGHT)
+        self.play(Write(equals), Write(fric_vector))
+        self.wait(0.5)
+        fric_width_change = fric_vector.get_width() - new_force_eq[4].get_width() + SMALL_BUFF
+        self.play(
+            ApplyMethod(fric_vector.next_to, newt_eq[1], LEFT, buff=SMALL_BUFF),
+            ApplyMethod(new_force_eq[1].shift, fric_width_change*LEFT),
+            ApplyMethod(new_force_eq[3].shift, fric_width_change*LEFT),
+            ApplyMethod(grav_vector.shift, fric_width_change*LEFT),
+            ApplyMethod(norm_vector.shift, fric_width_change*LEFT),
+            *[FadeOut(thing) for thing in (new_force_eq[4], vec_arrows["friction"], equals)],
+            ApplyMethod(block.FORCES["gravity"].set_opacity, 1),
+            ApplyMethod(block.FORCES["normal"].set_opacity, 1),
+        )
+        self.wait(1.5)
+
+        accel_vector_on_block = block.FORCES["total"].copy().scale(self.m, about_point=block.FORCES["total"].get_start()).set_color(WHITE)
+        self.play(
+            ShowCreation(accel_vector_on_block),
+            newt_eq[3].shift, 1.5*DOWN,
+            vec_arrows["a"].shift, 1.5*DOWN,
+            block.FORCES["gravity"].set_opacity, 0.25,
+            block.FORCES["normal"].set_opacity, 0.25,
+            block.FORCES["friction"].set_opacity, 0.25,
+        )
+        accel_vector.move_to(newt_eq[3], aligned_edge=RIGHT)
+        equals.next_to(accel_vector, LEFT)
+        self.play(
+            ApplyMethod(VGroup(newt_eq[3], vec_arrows["a"]).next_to, equals, LEFT),
+        )
+        self.play(
+            Write(equals), 
+            Write(accel_vector)
+        )
+        self.wait(0.5)
+        accel_width_change = accel_vector.get_width() - newt_eq[3].get_width() + SMALL_BUFF
+        self.play(
+            ApplyMethod(accel_vector.shift, 1.5*UP),
+            *[ApplyMethod(thing.shift, accel_width_change*LEFT) for thing in (new_force_eq[1:4:2], grav_vector, norm_vector, fric_vector, newt_eq[1:-1])],
+            *[FadeOut(thing) for thing in (newt_eq[3], vec_arrows["a"], equals)],
+            ApplyMethod(block.FORCES["gravity"].set_opacity, 1),
+            ApplyMethod(block.FORCES["normal"].set_opacity, 1),
+            ApplyMethod(block.FORCES["friction"].set_opacity, 1),
+            Uncreate(accel_vector_on_block)
+        )
+        self.wait(1.5)
+
+        force_eq = VGroup(new_force_eq[1::2], grav_vector, norm_vector, fric_vector, newt_eq[1:-1], accel_vector)
+        removed_before_find_acceleration = [plane, block, block.label, *[block.FORCES[k] for k in ("gravity", "normal", "friction")]]
+        self.play(
+            ApplyMethod(self.camera_frame.move_to, force_eq.get_center()),
+            *[FadeOut(thing) for thing in removed_before_find_acceleration]
+        )
+        self.add(new_force_eq[1::2], newt_eq[1:-1])
+        self.wait(1)
+
+        self.camera_frame.center()
+        force_eq.center()
+        
+        left_plus = new_force_eq[1]
+        right_plus = new_force_eq[3]
+        equals = newt_eq[1]
+        m_sign = newt_eq[2]
+
+        brace = Brace(force_eq, LEFT)
+        self.wait(1)
+
+        for sign in (left_plus, right_plus, equals, m_sign):
+            sign.generate_target()
+            sign.target = VGroup(
+                sign.copy().scale(0.8).set_y(y_pos[0]),
+                sign.copy().scale(0.8).set_y(y_pos[1])
+            ).set_x(sign.get_x())
+
+        self.play(
+            *[FadeOut(brackets) for brackets in [vec.brackets for vec in (grav_vector, norm_vector, fric_vector, accel_vector)]],
+            *[MoveToTarget(sign) for sign in (left_plus, right_plus, equals, m_sign)],
+            GrowFromCenter(brace),
+            run_time=2.5
+        )
+        self.wait(0.6)
+
+        fric_tex = TexMobject("-", "\\mu\\text{\\textit{Þ}}").scale(0.8).set_color(self.forces["friction"]["color"]) \
+            .move_to(fric_vector.elements[0].get_center())
+        self.remove(fric_vector.elements[0])
+        self.add(fric_tex)
+
+        x_eq = TexMobject("mg", "\\sin{\\theta}", "-", "\\mu", "\\text{\\textit{Þ}}", "=", "m", "a").scale(0.8)
+        y_eq = TexMobject("-", "mg", "\\cos{\\theta}", "+", "\\text{\\textit{Þ}}", "=", "0").scale(0.8)
+        x_eq.set_y(y_pos[0])
+        y_eq.set_y(y_pos[1])
+
+        for g in (x_eq[0], x_eq[1], y_eq[0], y_eq[1], y_eq[2]):
+            g.set_color(self.forces["gravity"]["color"])
+        y_eq[4].set_color(self.forces["normal"]["color"])
+        x_eq[3].set_color(self.forces["friction"]["color"])
+        x_eq[4].set_color(self.forces["friction"]["color"])
+
+        self.play(AnimationGroup(
+            AnimationGroup(
+                *[FadeOut(thing) for thing in (left_plus[0], right_plus, m_sign[1], norm_vector.elements[0], fric_vector.elements[1])],
+                lag_ratio=0.1
+            ),
+            AnimationGroup(
+                *[ReplacementTransform(old, new) for old, new in zip(
+                    [fric_tex[0], left_plus[1], fric_tex[1], norm_vector.elements[1], 
+                        equals[0], equals[1], m_sign[0], accel_vector.elements[1], accel_vector.elements[0]], 
+                    [x_eq[2], y_eq[3], VGroup(x_eq[3], x_eq[4]), y_eq[4], 
+                        x_eq[5], y_eq[5], x_eq[6], y_eq[6], x_eq[7]]
+                )],
+                *[ApplyMethod(old.move_to, new.get_center()) for old, new in zip(grav_vector.elements, [VGroup(x_eq[0], x_eq[1]), VGroup(y_eq[0], y_eq[1], y_eq[2])])],
+                ApplyMethod(brace.next_to, VGroup(x_eq, y_eq), LEFT),
+                run_time=2
+            ),
+            lag_ratio=0.7,
+        ))
+        self.remove(*grav_vector.elements)
+        self.add(x_eq, y_eq)
+        self.wait(2)
+        
+        self.play(
+            self.camera_frame.set_width, y_eq.get_width()*3,
+            self.camera_frame.move_to, y_eq.get_center(),
+            *[ApplyMethod(thing.set_opacity, 0.25) for thing in (x_eq, brace)],
+        )
+        self.wait(0.75)
+        self.play(AnimationGroup(
+            *[FadeOut(y_eq[i]) for i in (0, 3, 6)],
+            MoveAlongPath(VGroup(y_eq[1], y_eq[2]), ArcBetweenPoints(VGroup(y_eq[1], y_eq[2]).get_center(), y_eq[6].get_left()+VGroup(y_eq[1], y_eq[2]).get_width()/2*RIGHT)),
+            lag_ratio=0.2,
+            run_time=1.8
+        ))
+        y_eq = VGroup(y_eq[4], y_eq[5], y_eq[1], y_eq[2])
+        y_eq.generate_target()
+        y_eq.target.align_to(x_eq, LEFT)
+        y_eq.target[-2:].set_color(self.forces["normal"]["color"])
+        self.play(
+            MoveToTarget(y_eq)
+        )
+        self.wait(1)
+        self.play(
+            self.camera_frame.set_y, VGroup(x_eq, y_eq, brace).get_y(),
+            *[ApplyMethod(thing.set_opacity, 1) for thing in (x_eq, brace)]
+        )
+        self.wait(0.5)
+
+        mu_buff = 0.05
+        x_eq_width_change = y_eq[-2:].get_width() - x_eq.get_parts_by_tex("Þ").get_width() + mu_buff
+        self.play(
+            ApplyMethod(x_eq[-3:].shift, x_eq_width_change*RIGHT),
+            ApplyMethod(y_eq[-2:].move_to, x_eq[-4].copy().shift(mu_buff*RIGHT), {"aligned_edge": UL}),
+            *[FadeOut(thing) for thing in (y_eq[:-2], brace, x_eq.get_parts_by_tex("Þ"))],
+            self.camera_frame.move_to, x_eq.get_center()+x_eq_width_change/2*RIGHT,
+            run_time=1.5
+        )
+        self.wait(1)
+
+        mg_out_width_change = y_eq[-2].get_right()[0]-x_eq[3].get_right()[0]
+
+        paren_buff = 0.075
+        left_paren = TexMobject("(").scale(0.85).next_to(x_eq[1], LEFT, buff=paren_buff).shift(mg_out_width_change*RIGHT)
+        right_paren = TexMobject(")").scale(0.85).next_to(y_eq[-1], RIGHT, buff=paren_buff)
+
+        self.add_foreground_mobject(x_eq[0])
+        x_eq[0].generate_target()
+        x_eq[0].target.shift((left_paren.get_width()+paren_buff-mg_out_width_change)*LEFT)
+        y_eq[-2].generate_target()
+        y_eq[-2].target.move_to(x_eq[0].target).set_opacity(0.25).set_color(self.forces["gravity"]["color"])
+
+        self.play(AnimationGroup(
+            AnimationGroup(
+                ApplyMethod(x_eq[:4].shift, (mg_out_width_change)*RIGHT),
+                ApplyMethod(x_eq[-3:].shift, (right_paren.get_width()+paren_buff)*RIGHT),
+                MoveToTarget(x_eq[0]),
+                ClockwiseTransform(y_eq[-2], y_eq[-2].target),
+                ApplyMethod(
+                    self.camera_frame.shift, 
+                    ((x_eq[0].target.get_center()[0]-x_eq[0].get_center()[0]) - (right_paren.get_width()+paren_buff))*RIGHT
+                ),
+                run_time=2
+            ),
+            AnimationGroup(
+                FadeIn(left_paren),
+                FadeIn(right_paren)
+            ),
+            lag_ratio=0.5,
+        ))
+        self.play(FadeOut(y_eq[-2]), run_time=0.5)
+        self.wait(1)
+
+        right_mg = TexMobject("m", "g").scale(0.8).match_style(x_eq[0]).move_to(x_eq[0])
+        self.add(right_mg)
+        self.remove(x_eq[0])
+        self.play(
+            FadeOutAndShift(right_mg[0], 0.3*DOWN),
+            FadeOutAndShift(x_eq[-2], 0.3*DOWN),
+            ApplyMethod(x_eq[-1].shift, (x_eq[-2].get_width()+0.01)*LEFT)
+        )
+        self.wait(0.75)
+
+        for s in x_eq[-3], x_eq[-1]:
+            s.generate_target()
+            s.target.set_x(VGroup(right_mg[1], x_eq[1:]).get_x()-s.get_x())
+
+        self.play(
+            CounterclockwiseTransform(x_eq[-3], x_eq[-3].target),
+            CounterclockwiseTransform(x_eq[-1], x_eq[-1].target),
+            ApplyMethod(self.camera_frame.set_x, VGroup(x_eq[-1].target, right_paren).get_x()),
+            run_time=1.25
+        )
+
+        self.wait(1)
+
+    def make_forces(self, block):
+        for f in self.forces.keys():
+            block.make_force_vector(
+                f, 
+                self.forces[f]["size"] * np.array([math.cos(self.forces[f]["angle"]), math.sin(self.forces[f]["angle"]), 0]), 
+                self.forces[f]["origin"], 
+                color=self.forces[f]["color"],
+            )
+            block.make_force_label(
+                f,
+                self.forces[f]["label_text"], 
+                self.forces[f]["label_direction"],
+                scale=min(0.8, self.forces[f]["size"]),
+                color=self.forces[f]["color"]
+            )
