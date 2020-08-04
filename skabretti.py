@@ -269,6 +269,11 @@ class InclinedPlane(Polygon):
         else:
             scene.remove(self.angle_arc, self.angle_label)
 
+    def set_angle(self, angle):
+        new_height = self.get_width()*math.tan(angle)
+        self.get_vertices()[1]
+
+
 
 class BlockAndInclinedPlaneScene(Scene):
     CONFIG = {
@@ -637,33 +642,42 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
         }
 
         self.add(plane, block)
-        self.wait(1)
+
+        self.add_sound("skabretti1.m4a")
+        self.wait(4.75)
+
         block.add_label(self, rotate_by=-ang, animate=True)
         self.add_foreground_mobjects(block, block.label)
-        self.wait(0.5)
+        self.wait(1.75)
         plane.add_angle_arc_and_label(self)
-        self.wait(1)
+        self.wait(1.25)
 
         a = self.g * (math.sin(ang) - self.mu * math.cos(ang))
         slide_time = math.sqrt(2*block.path_length/a)
 
         block.start_move(a)
-        self.wait(slide_time+3)
+        self.wait(slide_time+2.5)
 
+        self.add_sound("skabretti2.m4a")
         self.play(ApplyMethod(block.move_to_alpha, 0.5))
         block.move_to_alpha(0.5) # veit ekki afh þetta þarf
-        self.wait(0.2)
+        self.wait(2.5)
 
         plane.remove_angle_arc_and_label(self)
+        self.wait(0.75)
+
         self.play(
             self.camera_frame.set_width, plane.get_width(),
             self.camera_frame.move_to, block.get_center(),
+            run_time=1.5
         )
-        self.wait(1)
+        self.wait(2)
 
         self.make_forces(block)
 
-        for f in ("gravity", "normal", "friction"):
+        for f, sound in zip(("gravity", "normal", "friction"), ("skabretti3.m4a", "skabretti4.m4a", "skabretti5.m4a")):
+            self.add_sound(sound)
+            self.wait(2 if f=="gravity" else 1.25)
             block.add_force_vectors(self, f, update=False)
             block.add_force_labels(self, f, update=False)
             if f in ("gravity", "friction"):
@@ -674,13 +688,16 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
                 eq_mob = TexMobject("=", eq_text[f], color=self.forces[f]["color"]) \
                      .scale(min(0.8, self.forces[f]["size"]), about_point=block.FORCES["LABELS"][f].get_right()) \
                      .next_to(block.FORCES["LABELS"][f], RIGHT, aligned_edge=DOWN, buff=min(0.18, 0.18*self.forces[f]["size"]))
+                self.wait(0.5 if f=="gravity" else 2.5)
                 self.play(Write(eq_mob))
-                self.wait(3)
+                self.wait(4 if f=="gravity" else 10)
                 self.play(Uncreate(eq_mob))
             else:
                 self.wait(3)
 
-        self.wait(2)
+        self.wait(3)
+        self.add_sound("skabretti6.m4a")
+        self.wait(0.5)
         self.play(self.camera_frame.shift, 2.5*RIGHT, run_time=1.25)
         
         total_force_eq = TexMobject(
@@ -706,7 +723,7 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
             ),
             lag_ratio=0.2
         ))
-        self.wait(0.5)
+        self.wait(1)
 
         vec_arrows = {}
         for i, f in zip((0, 2, 4, 6), ("total", "gravity", "normal", "friction")):
@@ -733,7 +750,36 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
             *[FadeOut(total_force_eq[i]) for i in range(1, 7)],
             *[FadeOut(arr) for arr in vec_arrows.values()]
         ))
+        self.wait(2.5)
+
+        self.add_sound("skabretti7.m4a")
+        self.wait(0.75)
+
+        self.camera_frame.save_state()
+        self.play(
+            self.camera_frame.move_to, block.FORCES["total"],
+            self.camera_frame.set_width, block.FORCES["total"].get_width()*13
+        )
         self.wait(1)
+
+        total_force_projection_corner = np.array([block.FORCES["total"].get_end()[0], block.FORCES["total"].get_start()[1], 0])
+        total_force_vert_comp = DashedLine(total_force_projection_corner, block.FORCES["total"].get_end()).set_color(self.forces["total"]["color"])
+        total_force_horz_comp = DashedLine(block.FORCES["total"].get_start(), total_force_projection_corner).set_color(self.forces["total"]["color"])
+        self.play(ShowCreation(total_force_horz_comp))
+        self.wait(0.15)
+        self.play(ShowCreation(total_force_vert_comp))
+        self.wait(1)
+
+        self.play(ApplyMethod(self.camera_frame.restore))
+
+        total_force_vert_comp.add_updater(lambda c: c.put_start_and_end_on(
+            np.array([block.FORCES["total"].get_end()[0], block.FORCES["total"].get_start()[1], 0]),
+            block.FORCES["total"].get_end()
+        ))
+        total_force_horz_comp.add_updater(lambda c: c.put_start_and_end_on(
+            block.FORCES["total"].get_start(),
+            np.array([block.FORCES["total"].get_end()[0], block.FORCES["total"].get_start()[1], 0])
+        ))
 
         x_vec = Vector(RIGHT, tip_length=0.15, stroke_width=1.25)
         y_vec = x_vec.copy().rotate(PI/2, about_point=ORIGIN)
@@ -742,16 +788,25 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
         block.remove_force_labels(self, "total", animation=FadeOut)
         axes = VGroup(x_vec, y_vec, x_label, y_label).scale(0.7).move_to(block.get_center()+3*RIGHT)
         self.play(ShowCreation(axes))
-        self.wait(1)
-        self.play(Rotate(axes, -ang, about_point=x_vec.get_start()))
-        self.wait(0.2)
+        self.wait(2)
+        self.play(Rotate(axes, -ang, about_point=x_vec.get_start()), run_time=1.5)
+        self.wait(2)
 
         plane.scale(4, about_point=block.get_critical_point_on_block(DOWN))
 
         self.play(
             *[Rotate(mob, ang, about_point=block.get_center()) for mob in 
-                (plane, block, block.label, block.FORCES["total"], axes)]
+                (plane, block, block.label, block.FORCES["total"], axes)],
+            run_time=2.5
         )
+        total_force_vert_comp.clear_updaters()
+        total_force_horz_comp.clear_updaters()
+
+        self.add_sound("skabretti8.m4a")
+        self.wait(1)
+        self.play(*[FadeOut(thing) for thing in (total_force_horz_comp, total_force_vert_comp)])
+        self.wait(4)
+
         self.remove(block, block.label)
         block.remove_force_vectors(self, "total", animate=False)
         block = MovingBlock(
@@ -770,22 +825,27 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
         self.add(block, block.label)
 
         block.start_move(a)
-        self.wait((math.sqrt(2*a*(block.path_length-block.displacement))) / a + 0.1)
+        self.wait((math.sqrt(2*a*(block.path_length-block.displacement))) / a + 1.5)
         self.remove(block, block.FORCES["total"], block.label)
         block.move_to_alpha(0.5)
+        self.add_sound("skabretti9.m4a")
         self.play(
             FadeIn(block),
             FadeIn(block.FORCES["total"]),
             FadeIn(block.label)
         )
         block.move_to_alpha(0.5)
+        self.wait(4)
+
+        self.add_sound("2logmal.m4a")
         self.wait(2)
+
         self.play(
             FadeOut(axes),
             self.camera_frame.set_width, self.camera_frame.get_width() * 1.3,
             self.camera_frame.shift, 1.5*RIGHT+UP
         )
-        self.wait(1)
+        self.wait(2)
 
         newt_eq = TexMobject("F_{\\text{heild}}", "=", "m", "a")
         newt_eq.move_to(self.camera_frame.get_center() + np.array([
@@ -804,9 +864,9 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
             FadeIn(newt_eq[0]),
             ShowCreation(vec_arrows["a"]),
             Write(newt_eq[1:]),
-            lag_ratio=0.5
+            lag_ratio=0.7
         ))
-        self.wait(1)
+        self.wait(7.5)
 
         new_force_eq = total_force_eq[2:].scale(1/0.75).next_to(newt_eq[1], LEFT)
         for i, f in zip((0, 2, 4), ("gravity", "normal", "friction")):
@@ -822,7 +882,7 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
             *[ShowCreation(arrow) for arrow in [v for k,v in vec_arrows.items() if k not in ("a", "total")]],
             lag_ratio=0.05
         ))
-        self.wait(3)
+        self.wait(5)
 
         projection = block.FORCES["gravity"].copy()
         projection.rotate(-ang, about_point=projection.get_start()).scale(math.cos(-ang), about_point=projection.get_start())
@@ -831,6 +891,9 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
         comps = VGroup(vert_comp, horz_comp).set_color(self.forces["gravity"]["color"])
         self.play(ShowCreation(comps))
         self.wait(1)
+
+        self.add_sound("skabretti10.m4a")
+        self.wait(4)
 
         self.camera_frame.save_state()
         removed_in_grav_section = [r for r in self.get_mobjects() if r not in (block.FORCES["gravity"], comps, plane, self.camera_frame)]
@@ -849,7 +912,7 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
         ang_line_arc = Arc(PI, ang, arc_center=ang_line.get_start(), radius=0.6)
         ang_line_label = TexMobject("\\theta").scale(0.6).move_to(ang_line.get_start()).shift(0.85*np.array([math.cos(PI+ang/2), math.sin(PI+ang/2), 0]))
         grav_line = Line(block.FORCES["gravity"].get_start(), block.FORCES["gravity"].get_end()).match_style(block.FORCES["gravity"])
-        self.add(grav_line)
+        self.add_foreground_mobject(grav_line)
         self.play(AnimationGroup(
             ApplyMethod(self.camera_frame.move_to, VGroup(comps, block.FORCES["gravity"], ang_line, ang_line_arc).get_center()),
             ShowCreation(ang_line), 
@@ -892,7 +955,8 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
         moving_triangle.target.set_height(vert_comp.get_length())
         moving_triangle.target.set_width(horz_comp.get_length())
 
-        self.play(MoveToTarget(moving_triangle))
+        self.remove_foreground_mobject(grav_line)
+        self.play(MoveToTarget(moving_triangle), run_time=2.5)
         self.wait(0.5)
         self.play(
             ang_line_label.scale, 0.5,
@@ -907,24 +971,43 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
             FadeIn(block.FORCES["gravity"])
         )
         self.remove(grav_line)
-        self.wait(2)
+
+        self.add_sound("skabretti11.m4a")
+        self.wait(0.5)
 
         grav_eq = TexMobject("m", "g").scale(0.4).move_to(grav_line.get_center()).shift(0.3*RIGHT)
         vert_eq = TexMobject("m", "g", "\\cos", "{\\theta}").scale(0.4).rotate(PI/2).next_to(vert_comp, LEFT, buff=0.08)
         horz_eq = TexMobject("m", "g", "\\sin", "{\\theta}").scale(0.4).next_to(horz_comp, DOWN, buff=0.08)
         self.play(Write(grav_eq))
-        self.wait(1)
+        self.wait(4)
+        self.play(AnimationGroup(
+            ReplacementTransform(ang_line_label.copy(), horz_eq[-1]),
+            FadeIn(horz_eq[-2]), 
+            lag_ratio=0.8
+        ))
+        self.wait(2.5)
         self.play(
-            ReplacementTransform(grav_eq[0].copy(), vert_eq[0]),
-            ReplacementTransform(grav_eq[0].copy(), horz_eq[0]),
-            ReplacementTransform(grav_eq[1].copy(), vert_eq[1]),
-            ReplacementTransform(grav_eq[1].copy(), horz_eq[1]),
-            ReplacementTransform(ang_line_label.copy(), vert_eq[-1]),
-            ReplacementTransform(ang_line_label.copy(), horz_eq[-1]), 
-            FadeInFrom(vert_eq[-2], 0.2*DOWN),
-            FadeInFrom(horz_eq[-2], 0.2*LEFT),
-            run_time=2      
+            ReplacementTransform(grav_eq[0].copy(), horz_eq[0]), 
+            ReplacementTransform(grav_eq[1].copy(), horz_eq[1])
         )
+        self.wait(2)
+        self.play(
+            ReplacementTransform(ang_line_label.copy(), vert_eq[-1]),
+            FadeIn(vert_eq[-2]), 
+            ReplacementTransform(grav_eq[0].copy(), vert_eq[0]), 
+            ReplacementTransform(grav_eq[1].copy(), vert_eq[1])
+        )
+        # self.play(
+        #     ReplacementTransform(grav_eq[0].copy(), vert_eq[0]),
+        #     ReplacementTransform(grav_eq[0].copy(), horz_eq[0]),
+        #     ReplacementTransform(grav_eq[1].copy(), vert_eq[1]),
+        #     ReplacementTransform(grav_eq[1].copy(), horz_eq[1]),
+        #     ReplacementTransform(ang_line_label.copy(), vert_eq[-1]),
+        #     ReplacementTransform(ang_line_label.copy(), horz_eq[-1]), 
+        #     FadeInFrom(vert_eq[-2], 0.2*DOWN),
+        #     FadeInFrom(horz_eq[-2], 0.2*LEFT),
+        #     run_time=2      
+        # )
         self.wait(2)
 
         self.play(
@@ -933,7 +1016,9 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
             *[FadeIn(thing) for thing in removed_in_grav_section],
             run_time=1.8
         )
-        self.wait(0.75)
+
+        self.add_sound("skabretti12.m4a")
+        self.wait(6.2)
 
         self.play(
             new_force_eq[0].shift, 1.5*DOWN,
@@ -964,22 +1049,37 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
 
         grav_vector.next_to(equals, RIGHT)
         grav_vector.elements.set_opacity(0)
-        self.play(Write(equals), Write(grav_vector))
-        self.play(
-            Transform(horz_eq, grav_vector.elements[0].copy().set_opacity(1)),
-            Transform(vert_eq, grav_vector.elements[1].copy().set_opacity(1))
-        )
-        self.wait(1)
 
-        grav_vector.elements.set_opacity(1)
-        self.remove(horz_eq, vert_eq)
+        horz_eq.generate_target()
+        horz_eq.target.scale(1/0.4 * 0.8).move_to(grav_vector.elements[0]).set_color(self.forces["gravity"]["color"])
+
+        vert_eq.generate_target()
+        vert_eq.target.rotate(-PI/2).scale(1/0.4 * 0.8).move_to(grav_vector.elements[1], aligned_edge=RIGHT).set_color(self.forces["gravity"]["color"])
+
+        self.play(Write(equals), Write(grav_vector))
+        self.wait(1)
+        self.play(
+            MoveToTarget(horz_eq)
+        )
+        self.wait(5.5)
+        self.play(
+            MoveToTarget(vert_eq)
+        )
+        self.play(FadeOut(vert_eq), ApplyMethod(grav_vector.elements[1].set_opacity, 1))
+        self.remove(horz_eq)
+        grav_vector.elements[0].set_opacity(1)
+        self.wait(5)
+
         self.play(
             ApplyMethod(grav_vector.next_to, new_force_eq[1], LEFT, buff=SMALL_BUFF),
             *[FadeOut(thing) for thing in (new_force_eq[0], vec_arrows["gravity"], equals, comps)],
             ApplyMethod(block.FORCES["normal"].set_opacity, 1),
             ApplyMethod(block.FORCES["friction"].set_opacity, 1),
         )
-        self.wait(1.5)
+        self.wait(1)
+
+        self.add_sound("skabretti13.m4a")
+        self.wait(1)
 
         self.play(
             new_force_eq[2].shift, 1.5*DOWN,
@@ -990,7 +1090,7 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
         equals.next_to(new_force_eq[2])
         norm_vector.next_to(equals, RIGHT)
         self.play(Write(equals), Write(norm_vector))
-        self.wait(0.5)
+        self.wait(6)
         norm_width_change = norm_vector.get_width() - new_force_eq[2].get_width() + SMALL_BUFF
         self.play(
             ApplyMethod(norm_vector.next_to, new_force_eq[3], LEFT, buff=SMALL_BUFF),
@@ -1000,7 +1100,10 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
             ApplyMethod(block.FORCES["gravity"].set_opacity, 1),
             ApplyMethod(block.FORCES["friction"].set_opacity, 1),
         )
-        self.wait(1.5)
+        self.wait(1)
+
+        self.add_sound("skabretti14.m4a")
+        self.wait(1)
 
         self.play(
             new_force_eq[4].shift, 1.5*DOWN,
@@ -1011,7 +1114,7 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
         equals.next_to(new_force_eq[4])
         fric_vector.next_to(equals, RIGHT)
         self.play(Write(equals), Write(fric_vector))
-        self.wait(0.5)
+        self.wait(14)
         fric_width_change = fric_vector.get_width() - new_force_eq[4].get_width() + SMALL_BUFF
         self.play(
             ApplyMethod(fric_vector.next_to, newt_eq[1], LEFT, buff=SMALL_BUFF),
@@ -1023,7 +1126,10 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
             ApplyMethod(block.FORCES["gravity"].set_opacity, 1),
             ApplyMethod(block.FORCES["normal"].set_opacity, 1),
         )
-        self.wait(1.5)
+        self.wait(1)
+
+        self.add_sound("skabretti15.m4a")
+        self.wait(1)
 
         accel_vector_on_block = block.FORCES["total"].copy().scale(self.m, about_point=block.FORCES["total"].get_start()).set_color(WHITE)
         self.play(
@@ -1034,6 +1140,7 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
             block.FORCES["normal"].set_opacity, 0.25,
             block.FORCES["friction"].set_opacity, 0.25,
         )
+        self.wait(4)
         accel_vector.move_to(newt_eq[3], aligned_edge=RIGHT)
         equals.next_to(accel_vector, LEFT)
         self.play(
@@ -1043,7 +1150,7 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
             Write(equals), 
             Write(accel_vector)
         )
-        self.wait(0.5)
+        self.wait(5)
         accel_width_change = accel_vector.get_width() - newt_eq[3].get_width() + SMALL_BUFF
         self.play(
             ApplyMethod(accel_vector.shift, 1.5*UP),
@@ -1054,16 +1161,22 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
             ApplyMethod(block.FORCES["friction"].set_opacity, 1),
             Uncreate(accel_vector_on_block)
         )
-        self.wait(1.5)
+        self.wait(4)
 
+        self.camera_frame.save_state()
         force_eq = VGroup(new_force_eq[1::2], grav_vector, norm_vector, fric_vector, newt_eq[1:-1], accel_vector)
         removed_before_find_acceleration = [plane, block, block.label, *[block.FORCES[k] for k in ("gravity", "normal", "friction")]]
+
+        self.add_sound("skabretti16.m4a")
+        self.wait(1)
+
         self.play(
             ApplyMethod(self.camera_frame.move_to, force_eq.get_center()),
-            *[FadeOut(thing) for thing in removed_before_find_acceleration]
+            *[FadeOut(thing) for thing in removed_before_find_acceleration],
+            run_time=2
         )
         self.add(new_force_eq[1::2], newt_eq[1:-1])
-        self.wait(1)
+        self.wait(4.5)
 
         self.camera_frame.center()
         force_eq.center()
@@ -1074,7 +1187,6 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
         m_sign = newt_eq[2]
 
         brace = Brace(force_eq, LEFT)
-        self.wait(1)
 
         for sign in (left_plus, right_plus, equals, m_sign):
             sign.generate_target()
@@ -1082,6 +1194,9 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
                 sign.copy().scale(0.8).set_y(y_pos[0]),
                 sign.copy().scale(0.8).set_y(y_pos[1])
             ).set_x(sign.get_x())
+
+        self.add_sound("skabretti17.m4a")
+        self.wait(1)
 
         self.play(
             *[FadeOut(brackets) for brackets in [vec.brackets for vec in (grav_vector, norm_vector, fric_vector, accel_vector)]],
@@ -1121,20 +1236,32 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
                 )],
                 *[ApplyMethod(old.move_to, new.get_center()) for old, new in zip(grav_vector.elements, [VGroup(x_eq[0], x_eq[1]), VGroup(y_eq[0], y_eq[1], y_eq[2])])],
                 ApplyMethod(brace.next_to, VGroup(x_eq, y_eq), LEFT),
-                run_time=2
+                run_time=1.5
             ),
             lag_ratio=0.7,
         ))
         self.remove(*grav_vector.elements)
         self.add(x_eq, y_eq)
-        self.wait(2)
+
+        self.play(AnimationGroup(
+            AnimationGroup(WiggleOutThenIn(x_eq[-4]), WiggleOutThenIn(y_eq[-3])),
+            WiggleOutThenIn(x_eq[-1]),
+            lag_ratio=0.75
+        ))
+
+        self.add_sound("skabretti18.m4a")
+        self.wait(7)
         
         self.play(
             self.camera_frame.set_width, y_eq.get_width()*3,
             self.camera_frame.move_to, y_eq.get_center(),
             *[ApplyMethod(thing.set_opacity, 0.25) for thing in (x_eq, brace)],
         )
-        self.wait(0.75)
+        self.wait(7)
+
+        self.add_sound("skabretti19.m4a")
+        self.wait(1)
+
         self.play(AnimationGroup(
             *[FadeOut(y_eq[i]) for i in (0, 3, 6)],
             MoveAlongPath(VGroup(y_eq[1], y_eq[2]), ArcBetweenPoints(VGroup(y_eq[1], y_eq[2]).get_center(), y_eq[6].get_left()+VGroup(y_eq[1], y_eq[2]).get_width()/2*RIGHT)),
@@ -1145,10 +1272,11 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
         y_eq.generate_target()
         y_eq.target.align_to(x_eq, LEFT)
         y_eq.target[-2:].set_color(self.forces["normal"]["color"])
+
         self.play(
             MoveToTarget(y_eq)
         )
-        self.wait(1)
+        self.wait(4)
         self.play(
             self.camera_frame.set_y, VGroup(x_eq, y_eq, brace).get_y(),
             *[ApplyMethod(thing.set_opacity, 1) for thing in (x_eq, brace)]
@@ -1169,8 +1297,8 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
         mg_out_width_change = y_eq[-2].get_right()[0]-x_eq[3].get_right()[0]
 
         paren_buff = 0.075
-        left_paren = TexMobject("(").scale(0.85).next_to(x_eq[1], LEFT, buff=paren_buff).shift(mg_out_width_change*RIGHT)
-        right_paren = TexMobject(")").scale(0.85).next_to(y_eq[-1], RIGHT, buff=paren_buff)
+        left_paren = TexMobject("(").scale(0.8).next_to(x_eq[1], LEFT, buff=paren_buff).shift(mg_out_width_change*RIGHT)
+        right_paren = TexMobject(")").scale(0.8).next_to(y_eq[-1], RIGHT, buff=paren_buff)
 
         self.add_foreground_mobject(x_eq[0])
         x_eq[0].generate_target()
@@ -1220,7 +1348,59 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
             run_time=1.25
         )
 
+        self.wait(10)
+
+        plane = InclinedPlane(
+            angle=self.theta, 
+            show_angle_arc=False, 
+            show_angle_label=False,
+            arc_radius=1.5
+        ).to_corner(DL)
+
+        block = MovingBlock(
+            mass=self.m, 
+            start_point=plane.get_vertices()[1], 
+            end_point=plane.get_vertices()[2], 
+            displacement=1,
+            label_scale=1.25,
+            unit_height=0.9
+        )
+
+        for f in self.forces.keys():
+            self.forces[f]["angle"] -= ang
+
+        self.make_forces(block)
+        accel_vector_on_block = block.FORCES["total"].copy().scale(self.m, about_point=block.FORCES["total"].get_start()).set_color(WHITE)
+        accel_vector_on_block.add_updater(lambda a: a.move_to(block.get_critical_point_on_block(RIGHT), aligned_edge=UL))
+
+        acc_eq = TexMobject("a", "=", "g", "(", "\\sin{\\theta}", "-", "\\mu", "\\cos{\\theta}", ")").scale(0.8)
+        for i, j in zip(range(len(acc_eq)), [x_eq[-1], x_eq[-3], right_mg[-1], left_paren, x_eq[1], x_eq[2], x_eq[3], y_eq[3], right_paren]):
+            acc_eq[i].move_to(j).match_style(j)
+        self.add(acc_eq)
+        self.remove(*x_eq.submobjects, *y_eq.submobjects, left_paren, right_paren, *right_mg.submobjects)
+
+        acc_eq_cam_offset = acc_eq.get_center() - self.camera_frame.get_center()
+        acc_eq.next_to(accel_vector_on_block)
+        acc_eq_block_offset = acc_eq.get_center() - block.get_center()
+        acc_eq.add_updater(lambda eq: eq.move_to(block.get_center() + acc_eq_block_offset))
+        
+        self.camera_frame.move_to(acc_eq.get_center() - acc_eq_cam_offset)
+        self.camera_frame.generate_target()
+        self.camera_frame.target.move_to(ORIGIN).set_width(FRAME_WIDTH)
+
+        self.play(MoveToTarget(self.camera_frame), FadeIn(plane), FadeIn(block), FadeIn(accel_vector_on_block))
         self.wait(1)
+
+        acc_eq.add_updater(lambda eq: eq.next_to(accel_vector_on_block))
+
+        block.start_move(a)
+        self.wait(slide_time/2)
+        vel = block.velocity
+        acc_eq.clear_updaters()
+        self.play(FadeOutAndShift(acc_eq, vel*np.array([math.cos(-ang), math.sin(-ang), 0])), rate_func=linear)
+        self.wait(slide_time/2)
+
+
 
     def make_forces(self, block):
         for f in self.forces.keys():
