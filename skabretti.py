@@ -107,8 +107,7 @@ class MovingBlock(Block):
         self.path_length = path.get_length()
 
         if self.align_block_edge_to_path:
-            path.shift(
-                np.array([self.height/2 * math.sin(-ang), self.height/2 * math.cos(-ang), 0]))
+            path.shift(np.array([self.height/2 * math.sin(-ang), self.height/2 * math.cos(-ang), 0]))
             path.set_length(self.path_length-self.width)
             self.path_length = path.get_length()
 
@@ -1407,13 +1406,128 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
         )
         self.wait(slide_time/2 + 3)
 
-        self.play(block.move_to_alpha, 0.1)
-        block.move_to_alpha(0.1)
+        self.play(block.move_to_alpha, 0)
+        block.move_to_alpha(0)
         self.wait(2)
 
-        self.play(plane.set_angle, 15)
+        sub_block = Block(unit_height=0.9).move_to(block.get_center()).rotate(-ang)
+        sub_block.add_updater(lambda b: b.move_to(plane.get_vertices()[1]).shift(sub_block.get_center()-sub_block.get_vertices()[3]))
 
+        self.remove(block)
+        self.add(sub_block)
+        self.play(
+            ApplyMethod(plane.set_angle, 0),
+            Rotate(sub_block, ang),
+            run_time=2
+        )
+
+        self.wait(2.5)
+
+        theta_min = math.atan(self.mu)
+        self.play(
+            ApplyMethod(plane.set_angle, theta_min/DEGREES),
+            Rotate(sub_block, -theta_min),
+            run_time=8,
+            rate_func=linear
+        )
+
+        a_min = self.g * (math.sin(theta_min + 0.0025) - self.mu * math.cos(theta_min + 0.0025))
+        slide_time_max = math.sqrt(2*block.path_length/a_min)
+
+        block = MovingBlock(
+            mass=self.m, 
+            start_point=plane.get_vertices()[1], 
+            end_point=plane.get_vertices()[2], 
+            displacement=0,
+            label_scale=1.25,
+            unit_height=0.9
+        )
+        self.remove(sub_block)
+        self.add(block)
+        block.start_move(a_min)
+        self.wait(2)
+
+        leq_eq = TexMobject("a", "\\leqslant", "0").to_corner(UR, buff=1)
+        # a_tex = TexMobject("a").next_to(mu_eq[-2], LEFT)
+        acc_val_eq = acc_eq[2:].copy().scale(1/0.8).move_to(leq_eq[0].get_right(), aligned_edge=RIGHT)
+        self.play(Write(leq_eq))
         self.wait(1)
+        self.play(ReplacementTransform(leq_eq[0], acc_val_eq))
+        self.wait(1)
+        self.play(*[FadeOutAndShift(acc_val_eq[i], 0.4*DOWN) for i in (0, 1, -1)])
+        self.wait(1)
+        
+        # minus_tex = TexMobject("-").move_to(leq_eq[-1].get_left(), aligned_edge=LEFT)
+        # acc_val_eq[2].generate_target()
+        # acc_val_eq[2].target.next_to(minus_tex, RIGHT)
+
+        leq_eq.generate_target()
+        leq_eq.target = TexMobject("\\sin", "{\\theta}", "\leqslant", "\\mu", "\\cos{\\theta}")
+        leq_eq.target.move_to(leq_eq.get_right(), aligned_edge=RIGHT)
+        for let, ave in zip((0, 1, 3, 4), (2, 2, 4, 5)):
+            leq_eq.target[let].match_style(acc_val_eq[ave])
+
+        self.play(
+            ClockwiseTransform(acc_val_eq[-3], leq_eq.target[-2], replace_mobject_with_target_in_scene=True),
+            ClockwiseTransform(acc_val_eq[-2], leq_eq.target[-1], replace_mobject_with_target_in_scene=True),
+            ReplacementTransform(leq_eq[-2], leq_eq.target[2]),
+            ApplyMethod(acc_val_eq[2].move_to, leq_eq.target[:2]),
+            FadeOutAndShift(acc_val_eq[3], 0.8*RIGHT),
+            FadeOutAndShift(leq_eq[-1], 0.4*DOWN),
+            run_time=1.8
+        )
+        self.remove(acc_val_eq[2])
+        self.add(leq_eq.target[:2])
+        self.wait(1.5)
+
+        leq_eq = leq_eq.target
+        leq_eq.target = TexMobject("{\\sin", "{\\theta}", "\\over", "\\cos{\\theta}}", "\leqslant", "\\mu")
+        leq_eq.target.move_to(leq_eq.get_left(), aligned_edge=LEFT)
+        for let, le in zip((0, 1, 3, -1), (0, 1, -1, -2)):
+            leq_eq.target[let].match_style(leq_eq[le])
+
+        self.play(
+            ReplacementTransform(leq_eq[:2], leq_eq.target[:2]),
+            *[ReplacementTransform(leq_eq[i], leq_eq.target[j]) for i, j in zip((2, 3), (4, 5))],
+            ClockwiseTransform(leq_eq[4], leq_eq.target[3], replace_mobject_with_target_in_scene=True),
+            FadeInFrom(leq_eq.target[2], 0.4*DOWN),
+            run_time=1.8
+        )
+        self.wait(1)
+
+        leq_eq = leq_eq.target
+        leq_eq.target = TexMobject("\\tan", "{\\theta}", "\leqslant", "\\mu")
+        leq_eq.target.move_to(leq_eq.get_right(), aligned_edge=RIGHT)
+        # for let, le in zip((0, 1, -1), (0, 1, -1)):
+        #     leq_eq.target[let].match_style(leq_eq[le])
+        leq_eq.target[-1].match_style(leq_eq[-1])
+
+        self.play(
+            ReplacementTransform(leq_eq[:4:3], leq_eq.target[0]),
+            ReplacementTransform(leq_eq[1], leq_eq.target[1]),
+            ReplacementTransform(leq_eq[-2], leq_eq.target[-2]),
+            ReplacementTransform(leq_eq[-1], leq_eq.target[-1]),
+            FadeOut(leq_eq[2])
+        )
+        self.wait(1)
+
+        leq_eq = leq_eq.target
+        leq_eq.target = TexMobject("\\theta", "\\leqslant", "\\arctan", "{\\mu}")
+        leq_eq.target.move_to(leq_eq.get_right(), aligned_edge=RIGHT)
+        # for let, le in zip((0, 1, -1), (0, 1, -1)):
+        #     leq_eq.target[let].match_style(leq_eq[le])
+        leq_eq.target[-1].match_style(leq_eq[-1])
+
+        self.play(AnimationGroup(
+            FadeOutAndShift(leq_eq[0], 0.4*DOWN),
+            *[ReplacementTransform(leq_eq[i], leq_eq.target[j]) for i, j in zip((1, 2, 3), (0, 1, 3))],
+            FadeInFrom(leq_eq.target[2], 0.4*DOWN),
+            lag_ratio=0.2,
+            run_time=2.5
+        ))
+        self.wait(3)
+
+        # self.wait(slide_time_max + 1)
 
     def make_forces(self, block):
         for f in self.forces.keys():
