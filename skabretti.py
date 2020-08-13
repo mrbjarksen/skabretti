@@ -270,8 +270,11 @@ class InclinedPlane(Polygon):
             scene.remove(self.angle_arc, self.angle_label)
 
     def set_angle(self, angle):
-        new_height = self.get_width()*math.tan(angle)
-        self.get_vertices()[1]
+        # new_height = self.get_width()*math.tan(angle)
+        position = self.get_vertices()[0]
+        self.angle = angle
+        self.__init__()
+        self.shift(position)
 
 
 
@@ -1397,10 +1400,20 @@ class BlockInclinedPlaneDerivation(MovingCameraScene):
         self.wait(slide_time/2)
         vel = block.velocity
         acc_eq.clear_updaters()
-        self.play(FadeOutAndShift(acc_eq, vel*np.array([math.cos(-ang), math.sin(-ang), 0])), rate_func=linear)
-        self.wait(slide_time/2)
+        self.play(
+            FadeOutAndShift(acc_eq, vel*np.array([math.cos(-ang), math.sin(-ang), 0])),
+            FadeOutAndShift(accel_vector_on_block, vel*np.array([math.cos(-ang), math.sin(-ang), 0])),
+            rate_func=linear
+        )
+        self.wait(slide_time/2 + 3)
 
+        self.play(block.move_to_alpha, 0.1)
+        block.move_to_alpha(0.1)
+        self.wait(2)
 
+        self.play(plane.set_angle, 15)
+
+        self.wait(1)
 
     def make_forces(self, block):
         for f in self.forces.keys():
