@@ -117,20 +117,23 @@ class MovingBlock(Block):
 
         self.stopped, self.last_velocity = False, 0
         def update_block(self, dt):
-            if self.displacement >= self.path_length:
+            if self.displacement >= self.path_length and not self.stopped:
+                self.stopped = True
                 self.last_velocity = self.velocity
                 self.velocity = 0
                 self.acceleration = 0
                 self.displacement = self.path_length
 
-            self.velocity += self.acceleration * dt
-            self.displacement += self.velocity * dt
-
             self.move_to(straight_path(
-                    self.true_path.get_start(), 
-                    self.true_path.get_end(), 
-                    self.displacement / self.path_length
+                        self.true_path.get_start(), 
+                        self.true_path.get_end(), 
+                        self.displacement / self.path_length
                 ))
+            
+            if not self.stopped:
+                self.velocity += self.acceleration * dt
+                self.displacement += self.velocity * dt
+
 
         self.add_updater(update_block)
 
@@ -280,25 +283,26 @@ class InclinedPlane(Polygon):
 class BlockAndInclinedPlaneScene(Scene):
     CONFIG = {
         # Values (in SI-units)
-        "m": 1,
+        "m": 1.2,
         "theta": 30, # degrees
         "mu_k": 0.2,
         "mu_s": 0.5,
         "g": 9.82,
         "v0": 0,
         "s0": 0,
+        "height": 2.1,
 
         "combine_mu": True,
         "show_legend": True,
         "show_in_legend": {
             "m": False,
-            "theta": False,
-            "mu_k": True,
+            "theta": True,
+            "mu_k": False,
             "mu_s": False,
             "g": False,
-            "av_seperator": True,
-            "a": True,
-            "v": True,
+            "av_seperator": False,
+            "a": False,
+            "v": False,
             "force_seperator": False,
             "forces": False,
         },
@@ -328,7 +332,8 @@ class BlockAndInclinedPlaneScene(Scene):
             "friction": "F_{\\text{nún}}",
             "total": "F_{\\text{heild}}",
         },
-        "time_before_slide": 1,
+        "time_before_slide": 0,
+        "show_height_brace": True,
     }
 
     def construct(self):
@@ -336,6 +341,12 @@ class BlockAndInclinedPlaneScene(Scene):
             self.mu_s = self.mu_k
 
         incl_plane = InclinedPlane(angle=self.theta)
+        if self.show_height_brace:
+            height_brace = BraceLabel(
+                incl_plane, "\\SI{%s}{m}" % self.height, LEFT, label_scale=0.7
+            )
+            # height_brace.label.rotate(PI/2).next_to(height_brace.brace, LEFT)
+            incl_plane.add(height_brace)
         incl_plane.to_corner(DL)
 
         ang = self.theta*DEGREES
@@ -357,16 +368,26 @@ class BlockAndInclinedPlaneScene(Scene):
             total_time = (-self.v0 + math.sqrt(self.v0 ** 2 + 2*a*block.path_length)) / a
 
         if self.show_legend:
-            self.add(self.get_legend(block))
+            self.legend = self.get_legend(block, incl_plane)
+            self.add(self.legend)
 
-        self.add(incl_plane, block)
+        fake_v_tex = TexMobject("v = ")
+        v_val = ValueTracker(0)
+        fake_v_num = DecimalNumber(0, unit="\\si{m/s}").add_updater(lambda v: v.set_value(v_val.get_value()))
+        final_v = math.sqrt(2*self.g*self.height*(1 - self.mu_k*math.tan(ang)))
+        fake_v = VGroup(fake_v_tex, fake_v_num).scale(0.8).arrange()
+        VGroup(self.legend, fake_v).arrange(DOWN, aligned_edge=LEFT, buff=SMALL_BUFF).to_corner(UR)
+
+        self.add(incl_plane, block, fake_v)
         # if self.show_individual_force_vectors or self.show_total_force_vector:  
-        self.show_force_vectors_new(block)
+        # self.show_force_vectors_new(block)
         # else:
         #     self.wait(self.time_before_slide)
 
         block.start_move(a, self.v0)
-        self.wait(total_time + 1)
+        # self.wait(total_time + 1)
+        self.play(v_val.set_value, final_v, run_time=total_time, rate_func=linear)
+        self.wait(1)
 
     # Frekar ljótur kóði en whatever
     # def show_force_vectors(self, block):  
@@ -515,11 +536,12 @@ class BlockAndInclinedPlaneScene(Scene):
             
 
 
-    def get_legend(self, block):
+    def get_legend(self, block, plane):
         mg = self.m * self.g
         mgsin = mg * math.sin(self.theta*DEGREES)
         mgcos = mg * math.cos(self.theta*DEGREES)
-        a = round(self.g * (math.sin(self.theta*DEGREES) - self.mu_k * math.cos(self.theta*DEGREES)), 2)
+        height_const = 1 if self.height is None else self.height/plane.get_height()
+        a = round(height_const * self.g * (math.sin(self.theta*DEGREES) - self.mu_k * math.cos(self.theta*DEGREES)), 2)
 
         vals = {
             "m": TexMobject("\SI{%s}{kg}" % (self.m)),
@@ -528,8 +550,8 @@ class BlockAndInclinedPlaneScene(Scene):
             "mu_s": TexMobject("\\num{%s}" % (self.mu_s)),
             "g": TexMobject("\\SI{%s}{\\unitfrac{m}{s^2}}" % (self.g)),
             "a": TexMobject("\\SI{%s}{\\unitfrac{m}{s^2}}" % (max(0, a))),
-            "v": DecimalNumber(block.velocity, unit="\\unitfrac{m}{s}}", digit_to_digit_buff=0.06)
-                 .add_updater(lambda v: v.set_value(block.velocity if not block.stopped else block.last_velocity)),
+            "v": DecimalNumber(height_const*block.velocity, unit="\\unitfrac{m}{s}}", digit_to_digit_buff=0.06)
+                 .add_updater(lambda v: v.set_value(height_const*block.velocity if not block.stopped else height_const*block.last_velocity)),
             "forces": {
                 "gravity": TexMobject("\\SI{%s}{N}" % (round(mg, 2))),
                 "normal": TexMobject("\\SI{%s}{N}" % (round(mgcos, 2))),
